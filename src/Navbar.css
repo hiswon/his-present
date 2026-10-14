@@ -1,11 +1,9 @@
 .navbar {
-/* 1. 오버레이를 위한 핵심 스타일 */
-  position: fixed;   /* 스크롤을 내려도 상단에 고정 (스크롤 시 사라지게 하려면 absolute) */
+  position: fixed;   
   top: 0;
   left: 0;
   width: 100%;
   z-index: 1000;
-
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -19,7 +17,7 @@
 .navbar-logo {
   font-size: 1.4rem;
   font-weight: 800;
-  color: #979797; /* 페이지 배경이 밝은 톤일 때 잘 보이도록 어두운 색상 지정 */
+  color: #979797; 
   text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
@@ -28,18 +26,10 @@
   display: flex;
   gap: 1.5rem;
   margin: 0;
-  padding: 10;
+  padding: 0; /* 기존 padding: 10 오류 수정 */
 }
 
 .navbar-links a {
-  color: white;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.navbar-links a:hover {
-  color: #4caf50;
-}.navbar-links a {
   background-color: #ffffff;
   border: 1px solid #e0e0e0;
   border-radius: 50px;
@@ -48,7 +38,7 @@
   font-weight: 600;
   cursor: pointer;
   padding: 0.6rem 1.2rem;
-  text-decoration: none; /* 글씨 아래 밑줄 제거 */
+  text-decoration: none; 
   white-space: nowrap;
   transition: all 0.2s ease-in-out;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
@@ -67,4 +57,35 @@
   color: #ffffff;
   border-color: #4caf50;
   box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+}
+
+/* 모바일 화면 (예: 768px 이하)에서 sermon1 대신 1, 2, 3으로 표시 */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 1rem; /* 모바일에서 전체 네비게이션 좌우 여백을 조금 더 확보 */
+  }
+
+  .navbar-links {
+    gap: 0.4rem; /* 버튼 간격 좁히기 */
+  }
+
+  .navbar-links a {
+    /* flex를 사용하여 내부 글자를 완벽한 정중앙에 배치 */
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    
+    width: 2.2rem;   /* 가로 크기를 고정 (또는 min-width) */
+    height: 2.2rem;  /* 세로 크기를 고정하여 예쁜 원형/정사각형 모양 유지 */
+    padding: 0;      /* 기존 패딩 제거 */
+    font-size: 0;    /* 기존 'sermon1' 텍스트 숨김 */
+    border-radius: 50%; /* 동그란 버튼 모양으로 변경하면 깔끔합니다 (네모를 원하면 border-radius: 8px 등으로 조절) */
+  }
+
+  /* data-text 속성값(1, 2, 3)을 가져와서 출력 */
+  .navbar-links a::after {
+    content: attr(data-text);
+    font-size: 0.95rem; /* 숫자의 크기 */
+    font-weight: 600;
+  }
 }

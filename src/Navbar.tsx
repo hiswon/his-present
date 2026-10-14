@@ -8,13 +8,13 @@ const Navbar: React.FC = () => {
       <div className="navbar-logo">his Present</div>
       <ul className="navbar-links">
         <li>
-          <Link to="/page1">sermon1</Link>
+          <Link to="/page1" data-text="1">sermon1</Link>
         </li>
         <li>
-          <Link to="/page2">sermon2</Link>
+          <Link to="/page2" data-text="2">sermon2</Link>
         </li>
         <li>
-          <Link to="/page3">sermon3</Link>
+          <Link to="/page3" data-text="3">sermon3</Link>
         </li>
       </ul>
     </nav>
