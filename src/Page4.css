@@ -1,0 +1,425 @@
+
+
+.screen-container-A {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow-x: clip;
+  overflow-y: hidden;
+  /* background-color: rgba(0, 255, 255, 0.432); */
+}
+
+.screen-container-A::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; 
+  right: 0; 
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+  url('./bgpics/bg.jpeg') no-repeat center / cover;
+  filter: sepia(70%) hue-rotate(180deg) brightness(0.6);
+  transform: scale(1.1);
+  transform-origin: center center;
+  z-index: -1;
+} 
+
+.slider-boxes {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  z-index: 2;
+
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.3s;
+}
+
+.slider-boxes:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
+}
+
+
+
+.pictexts-container{
+  position: relative;
+  flex:1;
+  display: flex;
+  flex-direction: row;
+  scroll-snap-align: center;
+  align-items: center;
+  justify-content: center;
+}
+
+.pictexts-container:has(.bible-structure-container) {
+  /* 여기에 스타일을 작성하세요 */
+  /* background-color: #f5f5f5; */
+  border: 3px solid #000000;
+  width: 100%;           /* 800px 대신 화면 전체 너비로 변경 */
+  aspect-ratio: auto;
+}
+
+.box-pic-A {
+  flex-direction: column-reverse; /* 세로 방향 정렬 (위: 텍스트, 아래: 그림) */
+  justify-content: center;
+  align-items: center;
+  gap: clamp(3px, 3vw, 30px);
+  padding: 5vh 3%;
+  
+}
+
+.box-pic-A .intoPic {
+  flex:1;
+  max-width: 450px;    
+  aspect-ratio: 1 / 1; 
+  
+}
+
+.box-text-A {
+  flex:1;
+  display: flex;
+  width: clamp(50%, 17vw, 80%);
+  flex-direction: column;
+  text-align: left;
+  word-break: keep-all;
+  z-index: 5;
+}
+
+h1 {
+  font-size: 3rem;
+}
+
+/* 기본 스타일 초기화 및 레이아웃 */
+.bible-structure-container {
+  width: 100vw;
+  height: 100vh;
+  background-color: #121212;
+  color: #c9c9c9;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 배경 격자 무늬 */
+.grid-background {
+  background-image: 
+    linear-gradient(rgba(120, 120, 120, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 120, 120, 0.05) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* 상단 헤더 스타일 */
+.page-header {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  border-bottom: 1px solid #333;
+}
+
+.page-header p {
+  color: #666;
+  font-size: 14px;
+}
+
+/* 메인 콘텐츠 영역 */
+.timeline-section {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.title-area {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.main-title {
+  color: #e0e0e0;
+  font-size: 32px;
+  font-weight: 300;
+  margin: 0;
+  letter-spacing: 2px;
+}
+
+.main-subtitle {
+  color: #999;
+  font-size: 18px;
+  margin: 10px 0;
+  letter-spacing: 1px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   [핵심] 내용이 많아져도 스크롤바 없이 옆으로 밀 수 있는 영역
+   ───────────────────────────────────────────────────────────── */
+.scrollable-wrapper {
+  width: 100%;
+  overflow-x: auto; /* 내용이 많으면 가로 스크롤 가능 */
+  overflow-y: hidden;
+  /* 스크롤바 숨기기 (크롬, 사파리, 오페라) */
+  scrollbar-width: none; /* 파이어폭스 */
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth; /* 부드러운 스크롤 이동 */
+  -ms-overflow-style: none; /* 인터넷 익스플로러 */
+  cursor: grab; /* 마우스로 잡을 수 있는 형태 */
+  padding: 60px 0 60px 0;
+}
+
+.scrollable-wrapper::-webkit-scrollbar {
+  display: none; /* 크롬/사파리 스크롤바 숨김 */
+}
+
+.scrollable-wrapper:active {
+  cursor: grabbing;
+}
+
+/* 수평 타임라인 */
+.horizontal-timeline {
+  display: flex;
+  align-items: flex-start;
+  gap: 80px; /* 단계 사이의 간격 */
+  width: max-content; /* 내용에 맞춰 가로 폭 자동 증가 */
+  padding: 0 50vw;
+  position: relative;
+}
+/* 
+.connecting-line {
+  position: absolute;
+  top: 67px;
+
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background-color: #4a4a4a;
+  z-index: 1;
+} */
+
+/* 연결선 위치 조정 */
+.connecting-line {
+  position: absolute;
+  top: 67px;
+  
+  /* 좌우 패딩(50vw) 안쪽에서 시작해서 정확히 첫 번째와 마지막 점을 연결하도록 설정 */
+  left: 50vw;
+  right: 50vw;
+  width: auto; /* width 대신 left/right로 범위를 지정합니다 */
+  
+  height: 1px;
+  background-color: #4a4a4a;
+  z-index: 1;
+}
+
+/* 개별 단계 스타일 */
+.timeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  width: 240px; /* 고정 너비 지정 (내용이 많아지면 늘어나게 조절 가능) */
+  cursor: pointer;
+  transition: all 0.3s ease; /* 부드러운 전환 효과 */
+  scroll-snap-align: center;
+}
+
+.label-area {
+  height: 60px;
+}
+
+.step-number {
+  font-size: 40px;
+  margin-bottom: 10px;
+  display: block;
+  transition: color 0.3s ease;
+}
+
+/* 마커 디자인 */
+.step-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 30px auto;
+  position: relative;
+  background-color: #121212;
+  border: 1px solid #4a4a4a;
+  z-index: 3;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.solid-fill {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #ffd700;
+}
+
+/* 텍스트 정보 디자인 */
+.info-area {
+  transition: transform 0.3s ease;
+}
+
+.info-area p {
+  margin: 5px 0;
+}
+
+.korean-name {
+  color: #ffd700;
+  font-weight: 600;
+  font-size: 20px;
+  transition: color 0.3s ease;
+}
+
+.english-name {
+  color: #aaa;
+  font-size: 16px;
+  margin-bottom: 5px;
+}
+
+.books-list {
+  color: #666;
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: keep-all; /* 단어가 잘리지 않게 보호 */
+}
+
+/* ─────────────────────────────────────────────────────────────
+   [요청사항 반영] 
+   1. 올리면(Hover) -> 하이라이트 효과 (살짝 커지고 밝아짐)
+   2. 누르면(Active / Selected) -> 글자가 커지고 선명해짐
+   3. 포커스 모드: 컨테이너에 active-item이 존재할 때, 선택되지 않은 항목들은 어두워짐
+   ───────────────────────────────────────────────────────────── */
+
+/* 마우스 올렸을 때(Hover) 하이라이트 */
+.timeline-step:hover .step-number {
+  color: #fff;
+}
+.timeline-step:hover .step-marker {
+  border-color: #ffd700;
+  transform: scale(1.2);
+}
+.timeline-step:hover .korean-name {
+  color: #fff;
+}
+
+/* 클릭해서 선택된 상태 (포커스) */
+.timeline-step.selected {
+  transform: scale(1.4); /* 전체적으로 확대 */
+  transform-origin: 50% 67px;
+  /* transform-origin: top center; 아래쪽을 기준으로 커지게 설정하여 위로 덜 튀어나가게 함 */
+  z-index: 10;
+}
+
+.timeline-step.selected .step-number {
+  color: #ffd700;
+  font-size: 46px;
+}
+
+.timeline-step.selected .step-marker {
+  border-color: #ffd700;
+  transform: scale(1.4);
+  background-color: #ffd700;
+}
+
+.timeline-step.selected .solid-fill {
+  background-color: #121212;
+}
+
+.timeline-step.selected .korean-name {
+  color: #ffd700;
+  font-size: 24px;
+}
+
+.timeline-step.selected .english-name {
+  color: #ddd;
+}
+
+.timeline-step.selected .books-list {
+  color: #aaa; /* 선택된 항목은 글자가 선명하게 보임 */
+  font-size: 14px;
+}
+
+/* 누군가 선택되었을 때, 선택되지 않은 다른 항목들을 어둡게 처리 */
+.horizontal-timeline.has-selection .timeline-step:not(.selected) {
+  opacity: 0.5; /* 투명도를 낮추어 어둡게 보이게 처리 */
+  filter: grayscale(80%);
+}
+
+/* "You are here" 마커 디자인 */
+/* .you-are-here {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.you-are-here .dot {
+  width: 1px;
+  height: 30px;
+  background-image: linear-gradient(#00c3ff 50%, transparent 50%);
+  background-size: 1px 6px;
+  margin-bottom: 10px;
+}
+
+.you-are-here .label {
+  color: #00c3ff;
+  font-size: 13px;
+  font-style: italic;
+  white-space: nowrap;
+} */
+
+.you-are-here {
+  position: absolute;
+  top: -25px;
+  /* left: 50%;
+  transform: translateX(-50%); */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.you-are-here .dot {
+  width: 1px;
+  height: 70px;
+  background-image: linear-gradient(#00c3ff 50%, transparent 50%);
+  background-size: 1px 6px;
+  margin-bottom: 1px;
+}
+
+.you-are-here .label {
+  color: #00c3ff;
+  font-size: 13px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* 하단 푸터 스타일 */
+.page-footer {
+  height: 70px;
+  border-top: 1px solid #333;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+}
+
+.page-footer p {
+  color: #555;
+  font-size: 14px;
+}
