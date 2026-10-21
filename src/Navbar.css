@@ -7,84 +7,90 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: #5e259e71;
+  background-color: #ad9fbd71;
   background: transparent;
   box-sizing: border-box;
-  padding: 1.2em 1.2rem;
+  padding: 1.5em 1.5rem;
   color: rgb(219, 219, 219);
 }
 
 .navbar-logo {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #979797; 
+  font-size: 1.0rem;
+  font-weight: 400;
+  color: #9797978a; 
   text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
-.navbar-links {
-  list-style: none;
+/* 화살표 페이지네이션 영역 스타일 */
+.navbar-pagination {
   display: flex;
-  gap: 1.0rem;
-  margin: 0;
-  padding: 0; /* 기존 padding: 10 오류 수정 */
+  align-items: center;
+  gap: 1rem;
 }
 
-.navbar-links a {
-  border: 2px solid #ffffffb4;
-  border-radius: 50px;
-  color: #ffffffb4;
-  font-size: 0.95rem;
-  font-weight: 600;
+/* 화살표 버튼 스타일 */
+.arrow-btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  background-color: #ffffff2d;
+  border: 1px solid #e0e0e0;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 1rem;
+  font-weight: 700;
   cursor: pointer;
-  padding: 0.4rem 1.0rem;
-  text-decoration: none; 
-  white-space: nowrap;
-  transition: all 0.2s ease-in-out;
+  text-decoration: none;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease-in-out;
 }
 
-.navbar-links a:hover {
-  background-color: #f5f5f5;
-  color: #111111;
+.arrow-btn:hover {
+  background-color: #f5f5f5cb;
+  color: #022853;
   border-color: #ccc;
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-.navbar-links a.active {
-  background-color: #4caf50;
-  color: #ffffff;
-  border-color: #4caf50;
-  box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+/* 첫 페이지나 마지막 페이지에 도달했을 때 양 끝 화살표 처리 (선택사항) */
+.arrow-btn.disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
-/* 모바일 화면 (예: 768px 이하)에서 sermon1 대신 1, 2, 3으로 표시 */
+/* 현재 페이지 텍스트 표시 스타일 */
+.page-indicator {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: #fdfdfd;
+  background-color: rgba(255, 255, 255, 0.4);
+  padding: 0.4rem 0.9rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+}
+
+/* 모바일 화면 대응 */
 @media (max-width: 768px) {
   .navbar {
-    padding: 1rem; /* 모바일에서 전체 네비게이션 좌우 여백을 조금 더 확보 */
+    padding: 1rem;
   }
 
-  .navbar-links {
-    gap: 0.4rem; /* 버튼 간격 좁히기 */
+  .navbar-pagination {
+    gap: 0.6rem;
   }
 
-  .navbar-links a {
-    /* flex를 사용하여 내부 글자를 완벽한 정중앙에 배치 */
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
-    
-    width: 2.2rem;   /* 가로 크기를 고정 (또는 min-width) */
-    height: 2.2rem;  /* 세로 크기를 고정하여 예쁜 원형/정사각형 모양 유지 */
-    padding: 0;      /* 기존 패딩 제거 */
-    font-size: 0;    /* 기존 'sermon1' 텍스트 숨김 */
-    border-radius: 50%; /* 동그란 버튼 모양으로 변경하면 깔끔합니다 (네모를 원하면 border-radius: 8px 등으로 조절) */
+  .page-indicator {
+    font-size: 0.85rem;
+    padding: 0.3rem 0.6rem;
   }
 
-  /* data-text 속성값(1, 2, 3)을 가져와서 출력 */
-  .navbar-links a::after {
-    content: attr(data-text);
-    font-size: 0.95rem; /* 숫자의 크기 */
-    font-weight: 600;
+  .arrow-btn {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.9rem;
   }
 }
