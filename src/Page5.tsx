@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './Page5.css';
 
 // 지정하신 방식으로 images3 폴더의 이미지들을 eager 글로빙하여 순서대로 배열 생성
 const images = import.meta.glob<{ default: string }>('./images3/*.{png,jpg,jpeg,webp}', { eager: true });
-const imageSrcs = Object.values(images).map((img) => img.default);
+const imageSrcs = Object.keys(images)
+  .sort() // 파일 경로(문자열)를 기준으로 알파벳/가나다 순 정렬 수행
+  .map((key) => images[key].default);
 
 interface SlideData {
   leftScripture: string;  // 왼쪽(2/3): 성경 구절
@@ -88,12 +90,33 @@ const prayerData = {
 };
 
 export const Page5: React.FC = () => {
+  // 터치/클릭 터치로 활성화된 강조 항목 식별을 위한 State
+  const [activeLeftIndex, setActiveLeftIndex] = useState<number | null>(null);
+  const [activeRightIndex, setActiveRightIndex] = useState<number | null>(null);
+  const [isPrayerActive, setIsPrayerActive] = useState<boolean>(false);
+
+  // 왼쪽 터치 이벤트 토글
+  const handleLeftClick = (index: number) => {
+    setActiveLeftIndex((prev) => (prev === index ? null : index));
+  };
+
+  // 오른쪽 터치 이벤트 토글
+  const handleRightClick = (index: number) => {
+    setActiveRightIndex((prev) => (prev === index ? null : index));
+  };
+
+  // 기도문 터치 이벤트 토글
+  const handlePrayerClick = () => {
+    setIsPrayerActive((prev) => !prev);
+  };
+
   return (
     <div className="snap-container">
       {/* 1 ~ 10번 슬라이드 */}
       {slidesData.map((slide, index) => {
-        // images3 폴더 순서대로 매핑 (없을 경우 분기 대비)
         const currentImg = imageSrcs[index] || '';
+        const isLeftActive = activeLeftIndex === index;
+        const isRightActive = activeRightIndex === index;
 
         return (
           <section key={index} className="snap-section">
@@ -110,7 +133,11 @@ export const Page5: React.FC = () => {
                       <p className="subtitle">오늘의 믿음이 내일의 운명이 됩니다.</p>
                     </div>
                   )}
-                  <div className="scripture-box">
+                  {/* 터치 시 글자 반투명 배경 및 확대 강조 클래스 부여 */}
+                  <div 
+                    className={`scripture-box ${isLeftActive ? 'active-presentation' : ''}`}
+                    onClick={() => handleLeftClick(index)}
+                  >
                     <p className="scripture-text">“{slide.leftScripture}”</p>
                     <p className="scripture-ref">{slide.leftRef}</p>
                   </div>
@@ -123,7 +150,13 @@ export const Page5: React.FC = () => {
                 style={{ backgroundImage: `url(${currentImg})` }}
               >
                 <div className="overlay right-overlay">
-                  <p className="explain-text">{slide.rightText}</p>
+                  {/* 터치 시 글자 반투명 배경 및 확대 강조 클래스 부여 */}
+                  <div 
+                    className={`explain-box ${isRightActive ? 'active-presentation' : ''}`}
+                    onClick={() => handleRightClick(index)}
+                  >
+                    <p className="explain-text">{slide.rightText}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -142,7 +175,11 @@ export const Page5: React.FC = () => {
               <h2>{prayerData.title}</h2>
               <p>{prayerData.subtitle}</p>
             </div>
-            <div className="prayer-body">
+            {/* 터치 시 기독문 영역 전체 반투명 박스 확대 강조 */}
+            <div 
+              className={`prayer-body ${isPrayerActive ? 'active-presentation' : ''}`}
+              onClick={handlePrayerClick}
+            >
               {prayerData.prayer.map((line, idx) => (
                 <p key={idx} className={idx === 0 || idx === prayerData.prayer.length - 1 ? "bold-line" : ""}>
                   {line}

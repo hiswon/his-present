@@ -1,26 +1,65 @@
-/* 전체 reset 및 CSS 변수 */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* ===================================================
+   스크롤바 스타일 및 자동 숨김 설정
+   =================================================== */
 
+/* 1. 좌우 스크롤바 완전 제거 (X축 스크롤 방지) */
 html, body {
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  margin: 0;
+  padding: 0;
   font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
-  background-color: #000;
   color: #fff;
 }
 
-/* Y축 스냅 스크롤 컨테이너 */
+/* 2. 메인 스크롤 컨테이너 설정 */
 .snap-container {
+  background-color: #000;
   width: 100vw;
   height: 100vh;
-  overflow-y: scroll;
+  overflow-x: hidden;
+  overflow-y: auto;
   scroll-snap-type: y mandatory;
   scroll-behavior: smooth;
+}
+
+/* Webkit 계열 브라우저 (Chrome, Safari, Edge) 스크롤바 스타일 */
+.snap-container::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+
+.snap-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.snap-container::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 3px;
+  transition: background-color 0.3s ease;
+}
+
+.snap-container:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.snap-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.6);
+}
+
+/* 3. Firefox 호환성 설정 */
+@supports (scrollbar-width: thin) {
+  .snap-container {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.3s ease;
+  }
+
+  .snap-container:hover {
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  }
 }
 
 /* 각각의 화면 한 칸 (100vw x 100vh) */
@@ -48,6 +87,7 @@ html, body {
   background-position: center left;
   position: relative;
   border-right: 2px solid rgba(255, 255, 255, 0.2);
+  box-sizing: border-box;
 }
 
 /* 오른쪽 1/3 비율 */
@@ -57,17 +97,21 @@ html, body {
   background-size: cover;
   background-position: center right;
   position: relative;
+  box-sizing: border-box;
 }
 
 /* 배경 어둡게 처리하여 글씨 가독성 확보 */
 .overlay {
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 3rem;
+  padding: 2.5rem;
+  /* padding-top: 10rem; */
+  overflow: hidden; /* 박스를 벗어나는 텍스트 잘림 방지 */
 }
 
 .left-overlay {
@@ -78,61 +122,105 @@ html, body {
 .right-overlay {
   align-items: flex-start;
   text-align: left;
-  background: rgba(0, 0, 0, 0.65); /* 오른쪽 설명란은 배경을 살짝 더 어둡게 */
+  background: rgba(0, 0, 0, 0.45); 
+  justify-content: center; /* 세로 중앙 정렬로 텍스트 균형 유지 */
 }
 
 /* 헤더 타이틀 스타일 */
 .header-banner {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 .header-banner h1 {
-  font-size: clamp(2rem, 4vw, 3.5rem);
-  color: #ff3b30;
+  font-size: clamp(1.8rem, 4vw, 4rem);
+  color: #d80606;
   text-shadow: 2px 2px 8px rgba(0,0,0,0.8);
   font-weight: 900;
+  margin: 0;
+  margin-bottom: 1.0rem;
 }
 
 .header-banner .subtitle {
   display: inline-block;
   background: #000;
   color: #fff;
-  padding: 0.3rem 0.8rem;
-  font-size: clamp(1rem, 1.8vw, 1.4rem);
+  padding: 0.2rem 0.8rem;
+  font-size: clamp(0.9rem, 1.5vw, 1.2rem);
   font-weight: bold;
-  margin-top: 0.5rem;
+  margin-top: 0.4rem;
   border-radius: 4px;
 }
 
-/* 성경 구절 스타일 */
-.scripture-box {
-  max-width: 90%;
+/* ---------------------------------------------------
+   글자 섹션 반투명 검은 칸 & 터치 강조 스타일
+   --------------------------------------------------- */
+.scripture-box, .explain-box {
+  max-width: 100%;
+  background: rgba(0, 0, 0, 0.65); /* 글자 섹션 반투명 검은 칸 */
+  padding: 1.5rem 2rem;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: transform 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  user-select: none;
+}
+
+/* 터치/클릭시 프레젠테이션 강조 효과 */
+.scripture-box.active-presentation, .explain-box.active-presentation {
+  transform: scale(1.06);
+  background: rgba(0, 0, 0, 0.88);
+  border: 2px solid #ff4d4d;
+  box-shadow: 0 0 25px rgba(255, 77, 77, 0.6);
+  z-index: 10;
+}
+
+.scripture-box.active-presentation .scripture-text {
+  font-size: clamp(1.4rem, 2.7vw, 2.3rem); /* 터치 시 글자 확대 */
+  color: #ffffff;
+}
+
+.scripture-box.active-presentation .scripture-ref {
+  font-size: clamp(1.1rem, 1.8vw, 1.6rem);
+  color: #ff8585;
+}
+
+.explain-box.active-presentation .explain-text {
+  font-size: clamp(1.2rem, 2vw, 1.7rem); /* 터치 시 글자 확대 */
+  color: #ffffff;
 }
 
 .scripture-text {
-  font-size: clamp(1.4rem, 2.5vw, 2.2rem);
+  font-size: clamp(1.2rem, 2.2vw, 1.9rem);
   font-weight: 800;
   color: #ffffff;
-  line-height: 1.4;
+  line-height: 1.45;
   text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.9);
   word-break: keep-all;
+  overflow-wrap: break-word;
+  transition: font-size 0.3s ease;
 }
 
 .scripture-ref {
-  font-size: clamp(1rem, 1.8vw, 1.5rem);
+  font-size: clamp(0.9rem, 1.5vw, 1.3rem);
   color: #ff6b6b;
   font-weight: 700;
-  margin-top: 1rem;
+  margin-top: 0.8rem;
   text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.9);
+  transition: font-size 0.3s ease;
 }
 
 /* 오른쪽 설명문 스타일 */
 .explain-text {
-  font-size: clamp(1.1rem, 1.8vw, 1.5rem);
-  line-height: 1.6;
+  font-size: clamp(1rem, 1.6vw, 1.4rem);
+  line-height: 1.65;
   color: #f1f1f1;
   font-weight: 500;
   word-break: keep-all;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  margin: 0;
+  transition: font-size 0.3s ease;
 }
 
 /* 영접 기도문 슬라이드 스타일 */
@@ -144,73 +232,111 @@ html, body {
 }
 
 .prayer-overlay {
-  background: rgba(255, 255, 255, 0.88); /* 영접기도문 영역은 밝은 바탕 반투명 처리 */
-  color: #111;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
   text-align: center;
   align-items: center;
   justify-content: space-between;
-  padding: 2.5rem 1.5rem;
+  padding: 2rem 1.5rem;
+  box-sizing: border-box;
+  height: 100%;
+}
+
+.prayer-header {
+  margin-bottom: 0.5rem;
 }
 
 .prayer-header h2 {
   background-color: #d90429;
   color: #fff;
   display: inline-block;
-  padding: 0.5rem 1.2rem;
-  font-size: clamp(1.2rem, 2.2vw, 2rem);
+  padding: 0.4rem 1rem;
+  font-size: clamp(1.1rem, 2vw, 1.7rem);
   font-weight: bold;
   border-radius: 4px;
+  margin: 0;
 }
 
 .prayer-header p {
-  color: #d90429;
-  font-size: clamp(0.9rem, 1.5vw, 1.2rem);
+  color: #ff8585;
+  font-size: clamp(0.85rem, 1.3vw, 1.1rem);
   font-weight: bold;
-  margin-top: 0.4rem;
+  margin: 0.3rem 0 0 0;
 }
 
+/* 기도문 영역 반투명 검은 칸 및 강조 설정 */
 .prayer-body {
-  max-width: 800px;
-  margin: 1rem 0;
+  width: 100%;
+  max-width: 850px;
+  margin: 0.5rem 0;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.75); /* 글자섹션 반투명 검은 칸 */
+  padding: 1.2rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: transform 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
+  user-select: none;
+}
+
+.prayer-body.active-presentation {
+  transform: scale(1.05);
+  background: rgba(0, 0, 0, 0.92);
+  border: 2px solid #ff4d4d;
+  box-shadow: 0 0 25px rgba(255, 77, 77, 0.6);
 }
 
 .prayer-body p {
-  font-size: clamp(0.9rem, 1.4vw, 1.15rem);
-  line-height: 1.4;
-  color: #222;
+  font-size: clamp(0.82rem, 1.25vw, 1.05rem);
+  line-height: 1.35;
+  color: #f1f1f1;
   word-break: keep-all;
+  margin: 0;
+  transition: font-size 0.3s ease;
+}
+
+.prayer-body.active-presentation p {
+  font-size: clamp(0.95rem, 1.45vw, 1.25rem); /* 터치 시 글자 확대 */
+  color: #ffffff;
 }
 
 .prayer-body .bold-line {
   font-weight: 800;
-  font-size: clamp(1rem, 1.5vw, 1.25rem);
+  font-size: clamp(0.9rem, 1.35vw, 1.15rem);
+  color: #ff2a2a;
+}
+
+.prayer-body.active-presentation .bold-line {
+  font-size: clamp(1.05rem, 1.6vw, 1.35rem);
 }
 
 .prayer-footer {
   width: 100%;
+  max-width: 850px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 2px solid #ccc;
-  padding-top: 1rem;
+  border-top: 2px solid rgba(255, 255, 255, 0.3);
+  padding-top: 0.8rem;
+  margin-top: 0.2rem;
 }
 
 .prayer-footer h3 {
   background-color: #1d3557;
   color: #fff;
-  padding: 0.4rem 1rem;
-  font-size: clamp(1rem, 1.6vw, 1.3rem);
+  padding: 0.35rem 0.8rem;
+  font-size: clamp(0.9rem, 1.4vw, 1.2rem);
   border-radius: 4px;
+  margin: 0;
 }
 
 .church-logo {
   font-family: 'Georgia', serif;
   font-style: italic;
-  font-size: clamp(1.2rem, 2vw, 1.8rem);
-  color: #666;
+  font-size: clamp(1.1rem, 1.8vw, 1.6rem);
+  color: #ddd;
 }
 
 /* ===================================================
@@ -218,43 +344,73 @@ html, body {
    =================================================== */
 @media (max-width: 768px) {
   .slide-content {
-    flex-direction: column; /* 세로로 배치 변환 */
+    flex-direction: column;
   }
 
   .section-left {
-    flex: 2; /* 위쪽 2/3 영역 (성경 구절 및 이미지) */
+    flex: 1.2;
     border-right: none;
     border-bottom: 2px solid rgba(255, 255, 255, 0.2);
   }
 
   .section-right {
-    flex: 1; /* 아래쪽 1/3 영역 (설명 문구) */
+    flex: 1;
   }
 
   .overlay {
-    padding: 1.2rem;
+    padding: 1rem 1.2rem;
+  }
+
+  .scripture-box, .explain-box {
+    padding: 1rem;
   }
 
   .scripture-text {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
+    line-height: 1.35;
   }
 
   .scripture-ref {
-    font-size: 0.95rem;
-    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    margin-top: 0.3rem;
   }
 
   .explain-text {
-    font-size: 0.95rem;
-    line-height: 1.45;
+    font-size: 0.9rem;
+    line-height: 1.4;
   }
 
   .prayer-overlay {
-    padding: 1.2rem 0.8rem;
+    padding: 1rem 0.8rem;
+    justify-content: space-around;
+  }
+
+  .prayer-header h2 {
+    font-size: 1.05rem;
+    padding: 0.3rem 0.8rem;
+  }
+
+  .prayer-body {
+    gap: 0.25rem;
+    margin: 0.2rem 0;
+    padding: 0.8rem;
   }
 
   .prayer-body p {
-    font-size: 0.82rem;
-    line-height: 1.3;
+    font-size: 0.75rem;
+    line-height: 1.25;
+  }
+
+  .prayer-footer {
+    padding-top: 0.5rem;
+  }
+
+  .prayer-footer h3 {
+    font-size: 0.85rem;
+    padding: 0.3rem 0.6rem;
+  }
+
+  .church-logo {
+    font-size: 1rem;
   }
 }
