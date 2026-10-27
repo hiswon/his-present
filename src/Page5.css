@@ -14,7 +14,63 @@ html, body {
   color: #fff;
 }
 
-/* 2. 메인 스크롤 컨테이너 설정 */
+/* 2. 상단 고정 동기화 컨트롤 바 스타일 */
+.top-sync-bar {
+  position: fixed;
+  top: 15px;
+  right: 15px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  padding: 6px 12px;
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.slide-counter {
+  font-weight: 800;
+  color: #ffeb3b;
+  font-size: 0.95rem;
+  margin-right: 4px;
+}
+
+.btn-a {
+  background: #333;
+  color: #fff;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 0.85rem;
+  transition: background 0.2s ease;
+}
+
+.btn-a.receiver {
+  background: #e63946; /* 수신 상태 색상 */
+}
+
+.btn-a.sender {
+  background: #2a9d8f; /* 발신 상태 색상 */
+}
+
+.room-input {
+  width: 50px;
+  padding: 4px;
+  text-align: center;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: #111;
+  color: #fff;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+/* 3. 메인 스크롤 컨테이너 설정 */
 .snap-container {
   background-color: #000;
   width: 100vw;
@@ -49,7 +105,7 @@ html, body {
   background-color: rgba(255, 255, 255, 0.6);
 }
 
-/* 3. Firefox 호환성 설정 */
+/* 4. Firefox 호환성 설정 */
 @supports (scrollbar-width: thin) {
   .snap-container {
     scrollbar-width: thin;
@@ -110,7 +166,6 @@ html, body {
   flex-direction: column;
   justify-content: center;
   padding: 2.5rem;
-  /* padding-top: 10rem; */
   overflow: hidden; /* 박스를 벗어나는 텍스트 잘림 방지 */
 }
 
@@ -123,7 +178,7 @@ html, body {
   align-items: flex-start;
   text-align: left;
   background: rgba(0, 0, 0, 0.45); 
-  justify-content: center; /* 세로 중앙 정렬로 텍스트 균형 유지 */
+  justify-content: center;
 }
 
 /* 헤더 타이틀 스타일 */
@@ -156,7 +211,7 @@ html, body {
    --------------------------------------------------- */
 .scripture-box, .explain-box {
   max-width: 100%;
-  background: rgba(0, 0, 0, 0.65); /* 글자 섹션 반투명 검은 칸 */
+  background: rgba(0, 0, 0, 0.65);
   padding: 1.5rem 2rem;
   border-radius: 12px;
   backdrop-filter: blur(4px);
@@ -176,7 +231,7 @@ html, body {
 }
 
 .scripture-box.active-presentation .scripture-text {
-  font-size: clamp(1.4rem, 2.7vw, 2.3rem); /* 터치 시 글자 확대 */
+  font-size: clamp(1.4rem, 2.7vw, 2.3rem);
   color: #ffffff;
 }
 
@@ -186,7 +241,7 @@ html, body {
 }
 
 .explain-box.active-presentation .explain-text {
-  font-size: clamp(1.2rem, 2vw, 1.7rem); /* 터치 시 글자 확대 */
+  font-size: clamp(1.2rem, 2vw, 1.7rem);
   color: #ffffff;
 }
 
@@ -271,12 +326,11 @@ html, body {
 /* 기도문 영역 반투명 검은 칸 및 강조 설정 */
 .prayer-body {
   width: clamp(230px, 48vw, 1100px);
-  /* max-width: 750px; */
-  margin: 0.5rem  0;
+  margin: 0.5rem 0;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  background: rgba(0, 0, 0, 0.3); /* 글자섹션 반투명 검은 칸 */
+  background: rgba(0, 0, 0, 0.3);
   padding: 1.2rem;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -303,7 +357,6 @@ html, body {
 }
 
 .prayer-body.active-presentation p {
-  /* 터치 시 글자 확대 */
   font-size: clamp(0.90rem, 1.6vw, 2.05rem);
   color: #ffffff;
 }
@@ -315,7 +368,6 @@ html, body {
 }
 
 .prayer-body.active-presentation .bold-line {
-  
   font-size: clamp(1.00rem, 1.8vw, 2.3rem);
   color: #ff2a2a;
 }
@@ -353,6 +405,12 @@ html, body {
    모바일 반응형 (화면 폭 768px 이하 처리)
    =================================================== */
 @media (max-width: 768px) {
+  .top-sync-bar {
+    top: 10px;
+    right: 10px;
+    padding: 4px 8px;
+  }
+
   .slide-content {
     flex-direction: column;
   }

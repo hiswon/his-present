@@ -1,5 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp, getApps } from 'firebase/app';
+import { getDatabase, ref, set, onValue } from 'firebase/database';
 import './Page5.css';
+
+// ==========================================
+// Firebase 설정 (본인의 파이어베이스 정보로 수정하세요)
+// ==========================================
+const firebaseConfig = {
+  apiKey: "AIzaSyCHeBnQDWGjL0t1hbAexa0LaPugUoVfu48",
+  authDomain: "nextmalsm.firebaseapp.com",
+  databaseURL: "https://nextmalsm-default-rtdb.firebaseio.com",
+  projectId: "nextmalsm",
+  storageBucket: "nextmalsm.firebasestorage.app",
+  messagingSenderId: "863334383763",
+  appId: "1:863334383763:web:9cf1226602b45e0a0d0d66",
+  measurementId: "G-7Z09DLGCQ4"
+};
+
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+const db = getDatabase(app);
 
 // 지정하신 방식으로 images3 폴더의 이미지들을 eager 글로빙하여 순서대로 배열 생성
 const images = import.meta.glob<{ default: string }>('./images3/*.{png,jpg,jpeg,webp}', { eager: true });
@@ -89,37 +108,173 @@ const prayerData = {
   footerText: "예수님은 지금 당신과 함께 하십니다!"
 };
 
+type SyncMode = 'OFF' | 'RECEIVER' | 'SENDER';
+
+type HighlightState = {
+  sectionIndex: number;
+  type: 'left' | 'right' | 'prayer';
+} | null;
+
 export const Page5: React.FC = () => {
-  // 터치/클릭 터치로 활성화된 강조 항목 식별을 위한 State
-  const [activeLeftIndex, setActiveLeftIndex] = useState<number | null>(null);
-  const [activeRightIndex, setActiveRightIndex] = useState<number | null>(null);
-  const [isPrayerActive, setIsPrayerActive] = useState<boolean>(false);
+  // 동기화 관련 상태
+  const [syncMode, setSyncMode] = useState<SyncMode>('OFF');
+  const [roomCode, setRoomCode] = useState<string>('');
+  
+  // 현재 보이는 슬라이드 인덱스 (순번 표시용)
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
 
-  // 왼쪽 터치 이벤트 토글
-  const handleLeftClick = (index: number) => {
-    setActiveLeftIndex((prev) => (prev === index ? null : index));
+  // 상호 배타적인 단일 강조 상태 (한 개가 강조되면 나머지는 꺼짐)
+  const [activeHighlight, setActiveHighlight] = useState<HighlightState>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
+  const isRemoteUpdating = useRef<boolean>(false);
+
+  const totalSlides = slidesData.length + 1; // 10개 성경 슬라이드 + 1개 기도문 슬라이드
+
+  // 버튼 A 로테이션 처리 (해제 -> 수신 -> 발신 -> 해제)
+  const handleToggleSyncMode = () => {
+    setSyncMode((prev) => {
+      if (prev === 'OFF') return 'RECEIVER';
+      if (prev === 'RECEIVER') return 'SENDER';
+      return 'OFF';
+    });
   };
 
-  // 오른쪽 터치 이벤트 토글
-  const handleRightClick = (index: number) => {
-    setActiveRightIndex((prev) => (prev === index ? null : index));
+  // Firebase로 현재 상태 전송 (발신 모드일 때만)
+  const syncToFirebase = (newIndex: number, newHighlight: HighlightState) => {
+    if (syncMode !== 'SENDER' || roomCode.length !== 2) return;
+    if (isRemoteUpdating.current) return;
+
+    const roomRef = ref(db, `rooms/${roomCode}`);
+    set(roomRef, {
+      currentIndex: newIndex,
+      activeHighlight: newHighlight,
+      updatedAt: Date.now(),
+    });
   };
 
-  // 기도문 터치 이벤트 토글
-  const handlePrayerClick = () => {
-    setIsPrayerActive((prev) => !prev);
+  // 수신 모드일 때 Firebase 데이터 구독
+  useEffect(() => {
+    if (syncMode !== 'RECEIVER' || roomCode.length !== 2) return;
+
+    const roomRef = ref(db, `rooms/${roomCode}`);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        isRemoteUpdating.current = true;
+
+        // 1. 스크롤 동기화
+        if (typeof data.currentIndex === 'number' && data.currentIndex !== currentIndex) {
+          setCurrentIndex(data.currentIndex);
+          sectionRefs.current[data.currentIndex]?.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 2. 버튼 강조 동기화
+        setActiveHighlight(data.activeHighlight !== undefined ? data.activeHighlight : null);
+
+        setTimeout(() => {
+          isRemoteUpdating.current = false;
+        }, 300);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [syncMode, roomCode, currentIndex]);
+
+  // 스크롤 위치 감지 (IntersectionObserver)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observerOptions = {
+      root: container,
+      threshold: 0.6, // 60% 이상 보일 때
+    };
+
+    const observerCallback: IntersectionObserverCallback = (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const indexStr = entry.target.getAttribute('data-index');
+          if (indexStr !== null) {
+            const index = Number(indexStr);
+            if (!isNaN(index) && index !== currentIndex) {
+              setCurrentIndex(index);
+              if (syncMode === 'SENDER' && roomCode.length === 2 && !isRemoteUpdating.current) {
+                syncToFirebase(index, activeHighlight);
+              }
+            }
+          }
+        }
+      });
+    };
+
+    const observer = new IntersectionObserver(observerCallback, observerOptions);
+    sectionRefs.current.forEach((sec) => {
+      if (sec) observer.observe(sec);
+    });
+
+    return () => observer.disconnect();
+  }, [currentIndex, syncMode, roomCode, activeHighlight]);
+
+  // 강조 클릭 핸들러 (상호 배타적 적용: 하나가 켜지면 기존 것은 꺼짐)
+  const handleHighlightClick = (sectionIndex: number, type: 'left' | 'right' | 'prayer') => {
+    // 수신 모드일 때는 로컬 터치로 제어 불가 (발신자의 제어를 수신받음)
+    if (syncMode === 'RECEIVER') return;
+
+    setActiveHighlight((prev) => {
+      const isSame = prev && prev.sectionIndex === sectionIndex && prev.type === type;
+      const nextHighlight = isSame ? null : { sectionIndex, type };
+
+      if (syncMode === 'SENDER' && roomCode.length === 2) {
+        syncToFirebase(currentIndex, nextHighlight);
+      }
+      return nextHighlight;
+    });
   };
 
   return (
-    <div className="snap-container">
+    <div className="snap-container" ref={containerRef}>
+      {/* 상단 고정 컨트롤 바 (순번 표시 및 동기화 버튼 A, 번호 입력창) */}
+      <div className="top-sync-bar">
+        <span className="slide-counter">
+          📍 {currentIndex + 1} / {totalSlides}
+        </span>
+        <button 
+          className={`btn-a ${syncMode.toLowerCase()}`}
+          onClick={handleToggleSyncMode}
+        >
+          {syncMode === 'OFF' && '동기화: 해제'}
+          {syncMode === 'RECEIVER' && '동기화: 수신'}
+          {syncMode === 'SENDER' && '동기화: 발신'}
+        </button>
+        {syncMode !== 'OFF' && (
+          <input
+            type="text"
+            maxLength={2}
+            value={roomCode}
+            onChange={(e) => setRoomCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
+            placeholder="번호"
+            className="room-input"
+          />
+        )}
+      </div>
+
       {/* 1 ~ 10번 슬라이드 */}
       {slidesData.map((slide, index) => {
         const currentImg = imageSrcs[index] || '';
-        const isLeftActive = activeLeftIndex === index;
-        const isRightActive = activeRightIndex === index;
+        const isLeftActive = activeHighlight?.sectionIndex === index && activeHighlight?.type === 'left';
+        const isRightActive = activeHighlight?.sectionIndex === index && activeHighlight?.type === 'right';
 
         return (
-          <section key={index} className="snap-section">
+          <section 
+            key={index} 
+            data-index={index}
+            ref={(el) => { sectionRefs.current[index] = el; }}
+            className="snap-section"
+          >
             <div className="slide-content">
               {/* 왼쪽 2/3 영역 */}
               <div
@@ -136,7 +291,7 @@ export const Page5: React.FC = () => {
                   {/* 터치 시 글자 반투명 배경 및 확대 강조 클래스 부여 */}
                   <div 
                     className={`scripture-box ${isLeftActive ? 'active-presentation' : ''}`}
-                    onClick={() => handleLeftClick(index)}
+                    onClick={() => handleHighlightClick(index, 'left')}
                   >
                     <p className="scripture-text">“{slide.leftScripture}”</p>
                     <p className="scripture-ref">{slide.leftRef}</p>
@@ -153,7 +308,7 @@ export const Page5: React.FC = () => {
                   {/* 터치 시 글자 반투명 배경 및 확대 강조 클래스 부여 */}
                   <div 
                     className={`explain-box ${isRightActive ? 'active-presentation' : ''}`}
-                    onClick={() => handleRightClick(index)}
+                    onClick={() => handleHighlightClick(index, 'right')}
                   >
                     <p className="explain-text">{slide.rightText}</p>
                   </div>
@@ -165,7 +320,11 @@ export const Page5: React.FC = () => {
       })}
 
       {/* 마지막 영접 기도 슬라이드 */}
-      <section className="snap-section prayer-section">
+      <section 
+        data-index={slidesData.length}
+        ref={(el) => { sectionRefs.current[slidesData.length] = el; }}
+        className="snap-section prayer-section"
+      >
         <div 
           className="prayer-container"
           style={{ backgroundImage: `url(${imageSrcs[slidesData.length] || imageSrcs[imageSrcs.length - 1] || ''})` }}
@@ -177,8 +336,8 @@ export const Page5: React.FC = () => {
             </div>
             {/* 터치 시 기독문 영역 전체 반투명 박스 확대 강조 */}
             <div 
-              className={`prayer-body ${isPrayerActive ? 'active-presentation' : ''}`}
-              onClick={handlePrayerClick}
+              className={`prayer-body ${activeHighlight?.sectionIndex === slidesData.length && activeHighlight?.type === 'prayer' ? 'active-presentation' : ''}`}
+              onClick={() => handleHighlightClick(slidesData.length, 'prayer')}
             >
               {prayerData.prayer.map((line, idx) => (
                 <p key={idx} className={idx === 0 || idx === prayerData.prayer.length - 1 ? "bold-line" : ""}>
