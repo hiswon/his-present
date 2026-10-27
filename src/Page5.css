@@ -17,7 +17,7 @@ html, body {
 /* 2. 상단 고정 동기화 컨트롤 바 스타일 */
 .top-sync-bar {
   position: fixed;
-  top: 15px;
+  bottom: 15px;
   right: 15px;
   z-index: 1000;
   display: flex;
