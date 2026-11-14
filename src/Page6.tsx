@@ -15,19 +15,19 @@ interface CardItem extends WordPair {
 interface Player {
   id: number;
   name: string;
-  score: number;      // 현재 레벨(판) 점수
-  streak: number;     // 연속 정답 콤보
-  totalWins: number;  // 총 승리한 판 수
-  totalScore: number; // 전체 판의 누적 점수 합산
+  score: number;
+  totalWins: number;
+  totalScore: number;
 }
 
-const LEVEL_WORD_COUNTS: Record<number, number> = {
-  1: 10,
-  2: 13,
-  3: 16,
-  4: 19,
-  5: 22,
-};
+// 플레이어별 순환 배경 파스텔톤 컬러 팔레트
+const PLAYER_BG_COLORS = [
+  'linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 50%, #faf5ff 100%)', // 연한 하늘/보라
+  'linear-gradient(135deg, #fce7f3 0%, #fae8ff 50%, #fef3c7 100%)', // 연한 핑크/노랑
+  'linear-gradient(135deg, #dcfce7 0%, #f0fdf4 50%, #e0f2fe 100%)', // 연한 민트/하늘
+  'linear-gradient(135deg, #ffedd5 0%, #fff7ed 50%, #fef2f2 100%)', // 연한 오렌지/핑크
+  'linear-gradient(135deg, #f3e8ff 0%, #faf5ff 100%, #e0e7ff 100%)', // 연한 라벤더
+];
 
 const WORD_POOLS: Record<number, WordPair[]> = {
   1: [
@@ -51,11 +51,6 @@ const WORD_POOLS: Record<number, WordPair[]> = {
     { id: 118, en: 'Shoe', kr: '신발', emoji: '👟' },
     { id: 119, en: 'Bag', kr: '가방', emoji: '🎒' },
     { id: 120, en: 'Bed', kr: '침대', emoji: '🛏️' },
-    { id: 121, en: 'Pig', kr: '돼지', emoji: '🐷' },
-    { id: 122, en: 'Cow', kr: '소', emoji: '🐮' },
-    { id: 123, en: 'Bus', kr: '버스', emoji: '🚌' },
-    { id: 124, en: 'Egg', kr: '달걀', emoji: '🥚' },
-    { id: 125, en: 'Cup', kr: '컵', emoji: '🥤' },
   ],
   2: [
     { id: 201, en: 'School', kr: '학교', emoji: '🏫' },
@@ -78,11 +73,6 @@ const WORD_POOLS: Record<number, WordPair[]> = {
     { id: 218, en: 'Chair', kr: '의자', emoji: '🪑' },
     { id: 219, en: 'Table', kr: '탁자', emoji: '🪵' },
     { id: 220, en: 'Music', kr: '음악', emoji: '🎵' },
-    { id: 221, en: 'Pizza', kr: '피자', emoji: '🍕' },
-    { id: 222, en: 'Juice', kr: '주스', emoji: '🧃' },
-    { id: 223, en: 'Smile', kr: '미소', emoji: '😊' },
-    { id: 224, en: 'Heart', kr: '마음', emoji: '❤️' },
-    { id: 225, en: 'Family', kr: '가족', emoji: '👨‍👩‍👧‍👦' },
   ],
   3: [
     { id: 301, en: 'Happy', kr: '행복한', emoji: '😄' },
@@ -105,11 +95,6 @@ const WORD_POOLS: Record<number, WordPair[]> = {
     { id: 318, en: 'Cold', kr: '추운', emoji: '🥶' },
     { id: 319, en: 'Hot', kr: '더운', emoji: '🥵' },
     { id: 320, en: 'Sweet', kr: '달콤한', emoji: '🍭' },
-    { id: 321, en: 'Smart', kr: '똑똑한', emoji: '🧠' },
-    { id: 322, en: 'Brave', kr: '용감한', emoji: '🦸' },
-    { id: 323, en: 'Kind', kr: '친절한', emoji: '😇' },
-    { id: 324, en: 'Listen', kr: '듣다', emoji: '👂' },
-    { id: 325, en: 'Speak', kr: '말하다', emoji: '🗣️' },
   ],
   4: [
     { id: 401, en: 'Doctor', kr: '의사', emoji: '👨‍⚕️' },
@@ -132,11 +117,6 @@ const WORD_POOLS: Record<number, WordPair[]> = {
     { id: 418, en: 'Weather', kr: '날씨', emoji: '⛅' },
     { id: 419, en: 'Holiday', kr: '휴일', emoji: '🎉' },
     { id: 420, en: 'Present', kr: '선물', emoji: '🎁' },
-    { id: 421, en: 'Camera', kr: '카메라', emoji: '📷' },
-    { id: 422, en: 'Computer', kr: '컴퓨터', emoji: '💻' },
-    { id: 423, en: 'Bridge', kr: '다리', emoji: '🌉' },
-    { id: 424, en: 'Castle', kr: '성', emoji: '🏰' },
-    { id: 425, en: 'Secret', kr: '비밀', emoji: '🤫' },
   ],
   5: [
     { id: 501, en: 'Adventure', kr: '모험', emoji: '🧭' },
@@ -159,15 +139,34 @@ const WORD_POOLS: Record<number, WordPair[]> = {
     { id: 518, en: 'Protect', kr: '보호하다', emoji: '🛡️' },
     { id: 519, en: 'Journey', kr: '여행', emoji: '🧳' },
     { id: 520, en: 'Treasure', kr: '보물', emoji: '💎' },
-    { id: 521, en: 'Universe', kr: '우주', emoji: '🌌' },
-    { id: 522, en: 'Memory', kr: '기억', emoji: '🧩' },
-    { id: 523, en: 'Success', kr: '성공', emoji: '🌟' },
-    { id: 524, en: 'Harmony', kr: '조화', emoji: '🎶' },
-    { id: 525, en: 'Miracle', kr: '기적', emoji: '✨' },
   ],
 };
 
 const CONFETTI_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
+
+// 정답/오답 시 랜덤 출력할 격려 및 재밌는 대사들
+const CORRECT_VOICES = [
+  '와! 대단하다!',
+  '정답! 오케이!',
+  '대단해! 정답!',
+  '정답! 멋지네요!',
+  '와우! 정답!',
+  '훌륭해! 최고!',
+  '완전좋아!',
+  '와 천재다!',
+  '어메이징!',
+];
+
+const INCORRECT_VOICES = [
+  '아쉬워요, 다음 기회에!',
+  '괜찮아요, 힘내세요!',
+  '아깝다! 다음에 맞추면 돼요!',
+  '조금만 더 집중해봐요!',
+  '화이팅! 다음엔 할 수 있어요!',
+  '뭐지?','심각하네...',
+  '울고싶다','우울하다...',
+  '하면되요','답답하다','괜찮아요',
+];
 
 export default function Page6() {
   const [gameState, setGameState] = useState<'SETUP' | 'READY' | 'PLAYING' | 'ROUND_OVER' | 'GAME_OVER'>('SETUP');
@@ -178,14 +177,18 @@ export default function Page6() {
   const [totalRounds, setTotalRounds] = useState<number>(1);
   const [currentRound, setCurrentRound] = useState<number>(1);
 
-  const [turnLimitSec, setTurnLimitSec] = useState<number>(15);
-  const [timeLeftSec, setTimeLeftSec] = useState<number>(15);
+  const [turnLimitSec, setTurnLimitSec] = useState<number>(10);
+  const [cardIncrementPerLevel, setCardIncrementPerLevel] = useState<number>(1);
+  const [useOpenOneCard, setUseOpenOneCard] = useState<boolean>(false);
+
+  const [timeLeftSec, setTimeLeftSec] = useState<number>(10);
 
   const [cards, setCards] = useState<CardItem[]>([]);
   const [flippedCards, setFlippedCards] = useState<number[]>([]);
   const [celebratingId, setCelebratingId] = useState<number | null>(null);
   const [matchedIds, setMatchedIds] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [exposedPenaltyCardIdx, setExposedPenaltyCardIdx] = useState<number | null>(null);
 
   const [scoreToast, setScoreToast] = useState<{ id: number; text: string; type: 'plus' | 'minus' } | null>(null);
   const flipTimeoutRef = useRef<number | null>(null);
@@ -204,7 +207,8 @@ export default function Page6() {
     }
   };
 
-  const playMatchCelebrationSound = () => {
+  // 랜덤 정답 음성 및 효과음 재생
+  const playRandomCorrectVoiceAndSound = () => {
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioCtx();
@@ -225,12 +229,24 @@ export default function Page6() {
 
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const voices = window.speechSynthesis.getVoices();
-      const hasKorean = voices.some((v) => v.lang.includes('ko'));
-      const utterance = new SpeechSynthesisUtterance(hasKorean ? '정답!' : 'Correct! OK!');
-      utterance.lang = hasKorean ? 'ko-KR' : 'en-US';
+      const randomText = CORRECT_VOICES[Math.floor(Math.random() * CORRECT_VOICES.length)];
+      const utterance = new SpeechSynthesisUtterance(randomText);
+      utterance.lang = 'ko-KR';
       utterance.rate = 1.1;
       utterance.pitch = 1.2;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // 랜덤 오답 격려 음성 재생
+  const playRandomIncorrectVoice = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const randomText = INCORRECT_VOICES[Math.floor(Math.random() * INCORRECT_VOICES.length)];
+      const utterance = new SpeechSynthesisUtterance(randomText);
+      utterance.lang = 'ko-KR';
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
   };
@@ -274,7 +290,7 @@ export default function Page6() {
 
   const addPlayer = () => {
     if (!inputName.trim()) return;
-    setPlayers([...players, { id: Date.now(), name: inputName.trim(), score: 0, streak: 0, totalWins: 0, totalScore: 0 }]);
+    setPlayers([...players, { id: Date.now(), name: inputName.trim(), score: 0, totalWins: 0, totalScore: 0 }]);
     setInputName('');
   };
 
@@ -294,10 +310,15 @@ export default function Page6() {
     setPlayers([...players].sort(() => Math.random() - 0.5));
   };
 
+  const calculateTargetWordCount = (level: number) => {
+    const basePairs = 10;
+    const count = basePairs + (level - 1) * cardIncrementPerLevel;
+    return Math.min(count, 20);
+  };
+
   const setupRoundCards = (level: number) => {
-    const safeLevel = Math.min(Math.max(level, 1), 5);
-    const targetWordCount = LEVEL_WORD_COUNTS[safeLevel] || 10;
-    const pool = [...WORD_POOLS[safeLevel]];
+    const targetWordCount = calculateTargetWordCount(level);
+    const pool = [...(WORD_POOLS[level] || WORD_POOLS[1])];
     const selectedWords = pool.sort(() => Math.random() - 0.5).slice(0, targetWordCount);
 
     const pairedCards: CardItem[] = [];
@@ -311,14 +332,14 @@ export default function Page6() {
     setMatchedIds([]);
     setFlippedCards([]);
     setCelebratingId(null);
+    setExposedPenaltyCardIdx(null);
     setIsProcessing(false);
     setTimeLeftSec(turnLimitSec);
   };
 
   const goToMainReady = () => {
     if (players.length === 0) return;
-    // 게임 시작 시 모든 누적 스코어 초기화
-    setPlayers(players.map((p) => ({ ...p, score: 0, streak: 0, totalWins: 0, totalScore: 0 })));
+    setPlayers(players.map((p) => ({ ...p, score: 0, totalWins: 0, totalScore: 0 })));
     setCurrentRound(1);
     setCurrentPlayerIdx(0);
     setupRoundCards(1);
@@ -331,19 +352,16 @@ export default function Page6() {
     setGameState('PLAYING');
   };
 
-  // 라운드 종료 시 현재 판의 최고 득점자에게 승리(totalWins) 1회 부여 후, 점수를 0으로 리셋하여 다음 판으로 이동
   const startNextRound = () => {
     setPlayers((prevPlayers) => {
-      // 현재 판에서 가장 점수가 높은 사람(들) 찾기
       const maxScore = Math.max(...prevPlayers.map((p) => p.score));
       return prevPlayers.map((p) => {
         const wonThisRound = p.score === maxScore && maxScore > 0;
         return {
           ...p,
           totalWins: wonThisRound ? p.totalWins + 1 : p.totalWins,
-          totalScore: p.totalScore + p.score, // 총 점수 합산에 누적
-          score: 0, // 다음 레벨 시작 시 점수 0점 리셋
-          streak: 0,
+          totalScore: p.totalScore + p.score,
+          score: 0,
         };
       });
     });
@@ -354,7 +372,6 @@ export default function Page6() {
     setGameState('PLAYING');
   };
 
-  // 최종 게임 종료 처리 (마지막 판 점수 합산 및 승리 판수 누적 반영)
   const finalizeGameResults = () => {
     setPlayers((prevPlayers) => {
       const maxScore = Math.max(...prevPlayers.map((p) => p.score));
@@ -369,7 +386,7 @@ export default function Page6() {
     });
   };
 
-  // 1초 단위 타이머
+  // 타임오버 시 -3점 및 턴 이동
   useEffect(() => {
     if (gameState !== 'PLAYING' || players.length === 0) return;
 
@@ -381,9 +398,12 @@ export default function Page6() {
           }
           setFlippedCards([]);
           setCelebratingId(null);
+          setExposedPenaltyCardIdx(null);
           setIsProcessing(false);
+          showToast(`⏰ 타임오버! -3점`, 'minus');
+
           setPlayers((list) =>
-            list.map((p, idx) => (idx === currentPlayerIdx ? { ...p, streak: 0 } : p))
+            list.map((p, idx) => (idx === currentPlayerIdx ? { ...p, score: p.score - 3 } : p))
           );
           setCurrentPlayerIdx((idx) => (idx + 1) % players.length);
           return turnLimitSec;
@@ -417,46 +437,47 @@ export default function Page6() {
       const card2 = cards[secondIdx];
 
       if (card1.id === card2.id) {
-        const currentPlayer = players[currentPlayerIdx];
-        const earnedPoints = 10 + currentPlayer.streak * 5;
-        const nextStreak = currentPlayer.streak + 1;
-
+        const earnedPoints = 10;
         setCelebratingId(card1.id);
-        playMatchCelebrationSound();
-        showToast(
-          nextStreak > 1
-            ? `🔥 ${nextStreak}연속 정답! +${earnedPoints}점`
-            : `✨ 정답! +${earnedPoints}점`,
-          'plus'
-        );
+        playRandomCorrectVoiceAndSound(); // 재밌는 정답 보이스 재생
+        showToast(`✨ 정답! +${earnedPoints}점`, 'plus');
 
         flipTimeoutRef.current = window.setTimeout(() => {
           setMatchedIds((prev) => [...prev, card1.id]);
           setPlayers((prev) =>
             prev.map((p, idx) =>
-              idx === currentPlayerIdx
-                ? { ...p, score: p.score + earnedPoints, streak: nextStreak }
-                : p
+              idx === currentPlayerIdx ? { ...p, score: p.score + earnedPoints } : p
             )
           );
           setCelebratingId(null);
           setFlippedCards([]);
+          setExposedPenaltyCardIdx(null);
           setIsProcessing(false);
           setTimeLeftSec(turnLimitSec);
         }, 1250);
       } else {
         speakEnglish(card2.en);
         showToast(`❌ 오답! -2점`, 'minus');
+        playRandomIncorrectVoice(); // 격려 오답 보이스 재생
+
+        let newPenaltyIdx: number | null = null;
+        if (useOpenOneCard) {
+          const unmatchableIndices = cards
+            .map((c, i) => (!matchedIds.includes(c.id) && i !== firstIdx && i !== secondIdx ? i : -1))
+            .filter((i) => i !== -1);
+          if (unmatchableIndices.length > 0) {
+            newPenaltyIdx = unmatchableIndices[Math.floor(Math.random() * unmatchableIndices.length)];
+          }
+        }
 
         flipTimeoutRef.current = window.setTimeout(() => {
           setPlayers((prev) =>
             prev.map((p, idx) =>
-              idx === currentPlayerIdx
-                ? { ...p, score: p.score - 2, streak: 0 }
-                : p
+              idx === currentPlayerIdx ? { ...p, score: p.score - 2 } : p
             )
           );
           setFlippedCards([]);
+          setExposedPenaltyCardIdx(newPenaltyIdx);
           setCurrentPlayerIdx((prev) => (prev + 1) % players.length);
           setIsProcessing(false);
           setTimeLeftSec(turnLimitSec);
@@ -465,10 +486,10 @@ export default function Page6() {
     }
   };
 
-  const currentLevelWordCount = LEVEL_WORD_COUNTS[Math.min(Math.max(currentRound, 1), 5)] || 10;
+  const currentTargetWordCount = calculateTargetWordCount(currentRound);
 
   useEffect(() => {
-    if (gameState === 'PLAYING' && cards.length > 0 && matchedIds.length === currentLevelWordCount) {
+    if (gameState === 'PLAYING' && cards.length > 0 && matchedIds.length === currentTargetWordCount) {
       if (currentRound < totalRounds) {
         setGameState('ROUND_OVER');
       } else {
@@ -477,26 +498,31 @@ export default function Page6() {
         playGrandCongratsFanfare();
       }
     }
-  }, [matchedIds, gameState, cards.length, currentLevelWordCount, currentRound, totalRounds]);
+  }, [matchedIds, gameState, cards.length, currentTargetWordCount, currentRound, totalRounds]);
 
   const timePercentage = Math.max(0, Math.min(100, (timeLeftSec / turnLimitSec) * 100));
-  const isDangerTime = gameState === 'PLAYING' && timeLeftSec <= 5;
+  const isDangerTime = gameState === 'PLAYING' && timeLeftSec <= 4;
 
-  // 최종 순위 정렬 기준: 1순위 '승리한 판 수(totalWins)' 많은 순, 2순위 '총 점수 합산(totalScore)' 높은 순
   const getSortedRankings = (isCurrentRoundRanking = false) => {
     return [...players].sort((a, b) => {
       if (isCurrentRoundRanking) {
         return b.score - a.score;
       }
       if (b.totalWins !== a.totalWins) {
-        return b.totalWins - a.totalWins; // 승리한 판 수가 많은 사람 우선
+        return b.totalWins - a.totalWins;
       }
-      return b.totalScore - a.totalScore; // 승리 판수가 같으면 총 점수 합산 비교
+      return b.totalScore - a.totalScore;
     });
   };
 
+  // 현재 차례 플레이어에게 부여된 고유 파스텔톤 배경 색상 계산
+  const currentBackground =
+    gameState === 'PLAYING' && players.length > 0
+      ? PLAYER_BG_COLORS[currentPlayerIdx % PLAYER_BG_COLORS.length]
+      : PLAYER_BG_COLORS[0];
+
   return (
-    <div className="game-container">
+    <div className="game-container" style={{ background: currentBackground }}>
       {scoreToast && gameState === 'PLAYING' && (
         <div key={scoreToast.id} className={`score-toast ${scoreToast.type}`}>
           {scoreToast.text}
@@ -509,7 +535,7 @@ export default function Page6() {
           <h1 className="setup-title">🎴 영단어 메모리 게임 설정</h1>
 
           <div className="setting-section">
-            <label className="setting-label">🏆 게임 판 수 선택 (레벨 및 단어 수 증가)</label>
+            <label className="setting-label">🏆 게임 판 수 선택</label>
             <div className="round-selector">
               {[
                 { val: 1, label: '단판' },
@@ -528,11 +554,38 @@ export default function Page6() {
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', lineHeight: 1.5 }}>
-              • 레벨별 단어: Lv.1(10) → Lv.2(13) → Lv.3(16) → Lv.4(19) → Lv.5(22)<br />
-              • 다음 판으로 넘어가면 **점수는 0점부터 다시 시작**됩니다!<br />
-              • 최종 우승: **많이 이긴 판 수** 기준 (동률 시 **총 점수 합산** 비교)
+          </div>
+
+          <div className="setting-section">
+            <label className="setting-label">📈 레벨별 카드 증가량 설정 (0 ~ 5)</label>
+            <div className="round-selector">
+              {[0, 1, 2, 3, 4, 5].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  className={`round-btn ${cardIncrementPerLevel === num ? 'active' : ''}`}
+                  onClick={() => setCardIncrementPerLevel(num)}
+                >
+                  +{num}쌍
+                </button>
+              ))}
             </div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+              • 0 선택 시: 레벨이 올라도 항상 기본 20장(10단어)<br />
+              • 1~5 선택 시: 레벨업마다 해당 쌍수만큼 카드 증가 (최대 40장)
+            </div>
+          </div>
+
+          <div className="setting-section">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                className="checkbox-input"
+                checked={useOpenOneCard}
+                onChange={(e) => setUseOpenOneCard(e.target.checked)}
+              />
+              🃏 오픈 원카드 규칙 사용 (틀리면 다음 턴에 카드 1장 잠시 오픈)
+            </label>
           </div>
 
           <div className="setting-section">
@@ -540,13 +593,13 @@ export default function Page6() {
             <div className="time-input-wrapper">
               <input
                 type="number"
-                min={5}
+                min={3}
                 max={120}
                 className="time-input"
                 value={turnLimitSec}
-                onChange={(e) => setTurnLimitSec(Math.max(5, Number(e.target.value)))}
+                onChange={(e) => setTurnLimitSec(Math.max(3, Number(e.target.value)))}
               />
-              <span style={{ fontWeight: 600, color: '#475569' }}>초 (5초 전 빨간 경고)</span>
+              <span style={{ fontWeight: 600, color: '#475569' }}>초 (타임오버 시 -3점)</span>
             </div>
           </div>
 
@@ -588,12 +641,12 @@ export default function Page6() {
         </div>
       )}
 
-      {/* 2. 메인 순서 정하기 & 게임 진행 화면 */}
+      {/* 2. 메인 화면 */}
       {(gameState === 'READY' || gameState === 'PLAYING') && (
         <>
           <div className="game-header">
             <span className="level-badge">
-              ⭐ Level {currentRound} ({currentLevelWordCount}단어 / {currentRound}/{totalRounds}판)
+              ⭐ Level {currentRound} ({currentTargetWordCount * 2}장 / {currentRound}/{totalRounds}판)
             </span>
 
             {gameState === 'PLAYING' && (
@@ -608,7 +661,6 @@ export default function Page6() {
                         {idx === currentPlayerIdx ? '👉 ' : ''}
                         {p.name}
                       </span>
-                      {p.streak > 1 && <span className="combo-badge">🔥{p.streak}연속</span>}
                     </div>
                     <div className="score-val">{p.score}점</div>
                   </div>
@@ -671,10 +723,10 @@ export default function Page6() {
             <div className={`timer-container ${isDangerTime ? 'warning-flash' : ''}`}>
               <div className="timer-info">
                 <span>
-                  현재 차례: <strong style={{ color: '#2563eb' }}>{players[currentPlayerIdx]?.name}</strong>
+                  현재 차례: <strong style={{ color: '#2563eb' }}>{players[currentPlayerIdx]?.name}</strong> (턴 바뀜 배경색 적용됨!)
                 </span>
                 <span className={isDangerTime ? 'timer-text-danger' : ''}>
-                  {isDangerTime ? '🚨 서두르세요! ' : '남은 시간: '}
+                  {isDangerTime ? '🚨 타임오버 임박! ' : '남은 시간: '}
                   {timeLeftSec}초
                 </span>
               </div>
@@ -695,14 +747,15 @@ export default function Page6() {
             }}
           >
             {cards.map((card, index) => {
-              const isFlipped = flippedCards.includes(index);
+              const isFlipped = flippedCards.includes(index) || (exposedPenaltyCardIdx === index && !matchedIds.includes(card.id));
               const isMatched = matchedIds.includes(card.id);
               const isCelebrating = celebratingId === card.id;
+              const isPenaltyExposed = exposedPenaltyCardIdx === index;
 
               return (
                 <div
                   key={card.uniqueId}
-                  className={`card ${isFlipped ? 'flipped' : ''} ${isMatched ? 'matched' : ''} ${isCelebrating ? 'celebrating' : ''}`}
+                  className={`card ${isFlipped ? 'flipped' : ''} ${isMatched ? 'matched' : ''} ${isCelebrating ? 'celebrating' : ''} ${isPenaltyExposed ? 'penalty-exposed' : ''}`}
                   onClick={() => handleCardClick(index)}
                 >
                   {isCelebrating && (
@@ -716,7 +769,7 @@ export default function Page6() {
                   )}
 
                   <div className="card-face card-back">
-                    <div className="card-back-pattern">❓</div>
+                    <div className="card-back-pattern">{isPenaltyExposed ? '👀' : '❓'}</div>
                   </div>
 
                   <div className="card-face card-front">
@@ -741,14 +794,14 @@ export default function Page6() {
         </>
       )}
 
-      {/* 3. 라운드(판) 클리어 모달 (현재 판 순위 표시 및 다음 판 점수 0점 리셋 알림) */}
+      {/* 3. 라운드 종료 모달 */}
       {gameState === 'ROUND_OVER' && (
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-trophy">🎉</div>
             <h2>{currentRound}판 클리어!</h2>
             <p className="modal-subtext">
-              다음 <strong>Level {currentRound + 1} ({LEVEL_WORD_COUNTS[currentRound + 1]}단어)</strong>부터는 <strong>점수가 0점부터</strong> 다시 시작됩니다!
+              다음 <strong>Level {currentRound + 1}</strong>부터는 <strong>점수가 0점부터</strong> 다시 시작됩니다!
             </p>
 
             <div className="rank-list">
@@ -757,7 +810,7 @@ export default function Page6() {
                   <span>
                     {rank === 0 ? '🥇 ' : `${rank + 1}위 `} {p.name}
                   </span>
-                  <span>{p.score}점 (이긴 판: {p.totalWins}승)</span>
+                  <span>{p.score}점 (누적승수: {p.totalWins}승)</span>
                 </div>
               ))}
             </div>
@@ -769,7 +822,7 @@ export default function Page6() {
         </div>
       )}
 
-      {/* 4. 최종 승리 결과 화려한 축하 모달 (Congratulations!) */}
+      {/* 4. 최종 승리 결과 축하 모달 */}
       {gameState === 'GAME_OVER' && (
         <div className="modal-overlay">
           <div className="confetti-layer">
@@ -791,9 +844,7 @@ export default function Page6() {
             <div className="modal-trophy">👑🏆👑</div>
             <div className="congrats-banner">✨ CONGRATULATIONS! ✨</div>
             <h2 style={{ margin: '4px 0 8px', color: '#0f172a' }}>축하합니다! 최종 우승!</h2>
-            <p className="modal-subtext">
-              많이 이긴 판 수 기준 (동률 시 총 점수 합산) 최종 순위입니다!
-            </p>
+            <p className="modal-subtext">누적승수 및 총 점수 합산 최종 순위입니다!</p>
 
             <div className="rank-list">
               {getSortedRankings(false).map((p, rank) => (
