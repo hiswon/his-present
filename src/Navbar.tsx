@@ -6,7 +6,7 @@ const Navbar: React.FC = () => {
   const location = useLocation();
 
   // 총 페이지 수 (설교 개수) 설정
-  const totalPages = 7;
+  const totalPages = 9;
 
   // 현재 경로에서 페이지 번호 추출 (예: "/page2" -> 2)
   const getCurrentPage = () => {
