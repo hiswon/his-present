@@ -16,6 +16,7 @@ interface BoardTile {
   shape: TileShape;
   rotation: number; // 0, 1, 2, 3 (x 90deg)
   fixed: boolean;
+  stoneVariant: number;
   treasure?: TreasureItem;
   startCornerOf?: number;
 }
@@ -35,14 +36,14 @@ interface LabyrinthPlayer {
 interface PushArrow {
   id: string;
   dir: 'DOWN' | 'UP' | 'RIGHT' | 'LEFT';
-  index: number; // 1, 3, 5
+  index: number;
   oppositeId: string;
 }
 
-interface ShiftAnimState {
-  dir: 'DOWN' | 'UP' | 'RIGHT' | 'LEFT';
-  index: number;
-  incomingTile: BoardTile;
+interface ShiftingState {
+  arrow: PushArrow;
+  enteringTile: BoardTile;
+  active: boolean;
 }
 
 const PLAYER_BG_COLORS = [
@@ -52,48 +53,48 @@ const PLAYER_BG_COLORS = [
   'linear-gradient(135deg, #ffedd5 0%, #fff7ed 50%, #fef2f2 100%)',
 ];
 
-const PIECE_COLORS = ['#ef4444', '#2563eb', '#10b981', '#f59e0b'];
+const PIECE_COLORS = ['#dc2626', '#2563eb', '#059669', '#d97706'];
 const CONFETTI_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
 
 const TREASURE_ITEMS: TreasureItem[] = [
   { id: 't1', name: '황금 왕관', emoji: '👑' },
-  { id: 't2', name: '푸른 다이아', emoji: '💎' },
-  { id: 't3', name: '마법 반지', emoji: '💍' },
-  { id: 't4', name: '고대 보물상자', emoji: '🧰' },
-  { id: 't5', name: '황금 열쇠', emoji: '🗝️' },
-  { id: 't6', name: '전설의 검', emoji: '⚔️' },
-  { id: 't7', name: '수호 방패', emoji: '🛡️' },
-  { id: 't8', name: '수정 구슬', emoji: '🔮' },
-  { id: 't9', name: '마법 램프', emoji: '🪔' },
-  { id: 't10', name: '고대 두루마리', emoji: '📜' },
-  { id: 't11', name: '황금 성배', emoji: '🏆' },
-  { id: 't12', name: '불사조 깃털', emoji: '🪶' },
-  { id: 't13', name: '신비한 나침반', emoji: '🧭' },
-  { id: 't14', name: '황금 모래시계', emoji: '⏳' },
-  { id: 't15', name: '드래곤 알', emoji: '🥚' },
-  { id: 't16', name: '마법 지팡이', emoji: '🪄' },
-  { id: 't17', name: '고대 망원경', emoji: '🔭' },
-  { id: 't18', name: '왕실 루비', emoji: '❤️‍🔥' },
-  { id: 't19', name: '해적 금화', emoji: '🪙' },
-  { id: 't20', name: '별빛 등불', emoji: '🏮' },
-  { id: 't21', name: '고대 가면', emoji: '🎭' },
-  { id: 't22', name: '천사의 하프', emoji: '🪕' },
-  { id: 't23', name: '성스러운 책', emoji: '📕' },
-  { id: 't24', name: '황금 사과', emoji: '🍎' },
+  { id: 't2', name: '붉은 보석', emoji: '💎' },
+  { id: 't3', name: '고대 마법서', emoji: '📖' },
+  { id: 't4', name: '불꽃 드래곤', emoji: '🐉' },
+  { id: 't5', name: '황금 열쇠', emoji: '🔑' },
+  { id: 't6', name: '미로의 유령', emoji: '👻' },
+  { id: 't7', name: '마법사의 모자', emoji: '🧙' },
+  { id: 't8', name: '황금 성배', emoji: '🏆' },
+  { id: 't9', name: '전설의 검', emoji: '🗡️' },
+  { id: 't10', name: '보물 상자', emoji: '🧰' },
+  { id: 't11', name: '신비한 수정구', emoji: '🔮' },
+  { id: 't12', name: '황금 나침반', emoji: '🧭' },
+  { id: 't13', name: '숲의 올빼미', emoji: '🦉' },
+  { id: 't14', name: '황금 반지', emoji: '💍' },
+  { id: 't15', name: '유니콘의 뿔', emoji: '🦄' },
+  { id: 't16', name: '고대 양피지', emoji: '📜' },
+  { id: 't17', name: '황금 방패', emoji: '🛡️' },
+  { id: 't18', name: '초승달 부적', emoji: '🌙' },
+  { id: 't19', name: '별빛 랜턴', emoji: '🏮' },
+  { id: 't20', name: '행운의 네잎클로버', emoji: '🍀' },
+  { id: 't21', name: '황금 동전 주머니', emoji: '💰' },
+  { id: 't22', name: '마법의 물약', emoji: '🧪' },
+  { id: 't23', name: '박쥐 석상', emoji: '🦇' },
+  { id: 't24', name: '황금 촛대', emoji: '🕯️' },
 ];
 
 const SHIFT_CHEERS = [
-  '오케이! 길이 열렸어요!',
-  '좋아! 멋진 한 수예요!',
-  '나이스! 미로가 움직입니다!',
-  '훌륭해요! 길이 이어졌어요!',
+  '오케이! 길이 멋지게 열렸어요!',
+  '좋아! 완벽한 길 밀기예요!',
+  '원더풀! 미로가 연결되었어요!',
+  '나이스! 아주 좋은 선택이에요!',
 ];
 
 const MOVE_CHEERS = [
-  '원더풀! 멋지게 이동했어요!',
-  '좋아! 보물에 가까워졌어요!',
-  '오케이! 순조롭게 전진합니다!',
-  '굿! 훌륭한 선택이에요!',
+  '좋아! 한 걸음 더 나아갔어요!',
+  '오케이! 훌륭한 이동이에요!',
+  '멋져요! 보물에 가까워졌어요!',
+  '원더풀! 탐험 실력이 대단해요!',
 ];
 
 const START_CORNERS = [
@@ -102,6 +103,12 @@ const START_CORNERS = [
   { row: 6, col: 6, rotation: 3 },
   { row: 6, col: 0, rotation: 0 },
 ];
+
+// 이름 첫 두 글자 추출 헬퍼
+function getShortName(name: string): string {
+  const trimmed = name.trim();
+  return trimmed ? trimmed.slice(0, 2) : '?';
+}
 
 function getOpenDirections(shape: TileShape, rotation: number): Directions {
   let base: Directions;
@@ -126,8 +133,7 @@ function findReachablePaths(
   startCol: number
 ): Map<string, { r: number; c: number }[]> {
   const paths = new Map<string, { r: number; c: number }[]>();
-  const startKey = `${startRow},${startCol}`;
-  paths.set(startKey, [{ r: startRow, c: startCol }]);
+  paths.set(`${startRow},${startCol}`, [{ r: startRow, c: startCol }]);
 
   const queue: { r: number; c: number }[] = [{ r: startRow, c: startCol }];
   const deltas = [
@@ -210,6 +216,7 @@ function createInitialBoard(treasurePool: TreasureItem[]): {
 
   const board: BoardTile[][] = Array.from({ length: 7 }, (_, r) =>
     Array.from({ length: 7 }, (_, c) => {
+      const stoneVariant = (r * 3 + c) % 3;
       const cornerIdx = START_CORNERS.findIndex((sc) => sc.row === r && sc.col === c);
       if (cornerIdx !== -1) {
         return {
@@ -217,6 +224,7 @@ function createInitialBoard(treasurePool: TreasureItem[]): {
           shape: 'L',
           rotation: START_CORNERS[cornerIdx].rotation,
           fixed: true,
+          stoneVariant,
           startCornerOf: cornerIdx,
         };
       }
@@ -228,6 +236,7 @@ function createInitialBoard(treasurePool: TreasureItem[]): {
           shape: 'T',
           rotation: fixedT.rot,
           fixed: true,
+          stoneVariant,
           treasure: treasureMap.get(`${r},${c}`),
         };
       }
@@ -238,6 +247,7 @@ function createInitialBoard(treasurePool: TreasureItem[]): {
         shape,
         rotation: Math.floor(Math.random() * 4),
         fixed: false,
+        stoneVariant,
         treasure: treasureMap.get(`${r},${c}`),
       };
     })
@@ -248,6 +258,7 @@ function createInitialBoard(treasurePool: TreasureItem[]): {
     shape: shuffledShapes[shapeCursor] || 'L',
     rotation: 0,
     fixed: false,
+    stoneVariant: 1,
   };
 
   return { board, spare };
@@ -258,7 +269,7 @@ export default function Page10() {
   const [players, setPlayers] = useState<LabyrinthPlayer[]>([
     {
       id: 1,
-      name: '탐험가 1',
+      name: '탐험1',
       color: PIECE_COLORS[0],
       row: 0,
       col: 0,
@@ -269,7 +280,7 @@ export default function Page10() {
     },
     {
       id: 2,
-      name: '탐험가 2',
+      name: '탐험2',
       color: PIECE_COLORS[1],
       row: 0,
       col: 6,
@@ -280,7 +291,7 @@ export default function Page10() {
     },
     {
       id: 3,
-      name: '탐험가 3',
+      name: '탐험3',
       color: PIECE_COLORS[2],
       row: 6,
       col: 6,
@@ -291,7 +302,7 @@ export default function Page10() {
     },
     {
       id: 4,
-      name: '탐험가 4',
+      name: '탐험4',
       color: PIECE_COLORS[3],
       row: 6,
       col: 0,
@@ -311,7 +322,7 @@ export default function Page10() {
   const [turnPhase, setTurnPhase] = useState<'SHIFT' | 'MOVE'>('SHIFT');
   const [forbiddenArrowId, setForbiddenArrowId] = useState<string | null>(null);
   const [lastPushedArrowId, setLastPushedArrowId] = useState<string | null>(null);
-  const [shiftAnim, setShiftAnim] = useState<ShiftAnimState | null>(null);
+  const [shiftingState, setShiftingState] = useState<ShiftingState | null>(null);
   const [winner, setWinner] = useState<LabyrinthPlayer | null>(null);
 
   const [toast, setToast] = useState<{
@@ -334,7 +345,7 @@ export default function Page10() {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
-      utterance.rate = 1.12;
+      utterance.rate = 1.1;
       utterance.pitch = 1.08;
       window.speechSynthesis.speak(utterance);
     }
@@ -357,13 +368,13 @@ export default function Page10() {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.065);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime + idx * 0.065);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.065 + 0.2);
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.06);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime + idx * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.06 + 0.2);
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + idx * 0.065);
-        osc.stop(ctx.currentTime + idx * 0.065 + 0.2);
+        osc.start(ctx.currentTime + idx * 0.06);
+        osc.stop(ctx.currentTime + idx * 0.06 + 0.2);
       });
     } catch {}
   };
@@ -371,7 +382,7 @@ export default function Page10() {
   const addPlayer = () => {
     if (!inputName.trim()) return;
     if (players.length >= 4) {
-      showToast('어메이징 라비린스는 최대 4명까지 참가할 수 있습니다.', 'info');
+      showToast('최대 4명까지 참가할 수 있습니다.', 'info');
       return;
     }
     const idx = players.length;
@@ -411,7 +422,7 @@ export default function Page10() {
 
   const goToMainReady = () => {
     if (players.length < 2) {
-      showToast('최소 2명 이상의 참가자를 등록해주세요!', 'info');
+      showToast('최소 2명 이상의 탐험가를 등록해주세요!', 'info');
       return;
     }
     setGameState('READY');
@@ -419,8 +430,8 @@ export default function Page10() {
 
   const startGame = () => {
     const totalNeeded = players.length * cardsPerPlayer;
-    const shuffledItems = [...TREASURE_ITEMS].sort(() => Math.random() - 0.5);
-    const selectedPool = shuffledItems.slice(0, totalNeeded);
+    const shuffledTreasures = [...TREASURE_ITEMS].sort(() => Math.random() - 0.5);
+    const selectedPool = shuffledTreasures.slice(0, totalNeeded);
 
     const { board: initialBoard, spare } = createInitialBoard(selectedPool);
 
@@ -449,14 +460,14 @@ export default function Page10() {
     setTurnPhase('SHIFT');
     setForbiddenArrowId(null);
     setLastPushedArrowId(null);
-    setShiftAnim(null);
+    setShiftingState(null);
     setWinner(null);
     isAnimatingRef.current = false;
     setGameState('PLAYING');
 
     const firstTarget = initializedPlayers[0].targetStack[0];
     showToast(
-      `🧭 ${initializedPlayers[0].name}님 차례! [${firstTarget.emoji} ${firstTarget.name}] 보물을 찾으세요!`,
+      `🧭 ${initializedPlayers[0].name}님 차례! 길을 밀어 [${firstTarget.emoji} ${firstTarget.name}] 보물을 찾으세요.`,
       'info'
     );
   };
@@ -470,8 +481,7 @@ export default function Page10() {
     });
   };
 
-  // 화살표 클릭 시 쭉~ 밀리는 슬라이드 애니메이션 후 보드 갱신
-  const handlePushTile = async (arrow: PushArrow) => {
+  const handlePushTile = (arrow: PushArrow) => {
     if (
       gameState !== 'PLAYING' ||
       turnPhase !== 'SHIFT' ||
@@ -482,73 +492,83 @@ export default function Page10() {
     }
 
     if (arrow.id === forbiddenArrowId) {
-      showToast('🚫 방금 상대가 밀어낸 반대 방향으로는 바로 되밀 수 없습니다!', 'info');
+      showToast('🚫 방금 밀어낸 반대 방향으로는 바로 되밀 수 없습니다!', 'info');
       return;
     }
 
     isAnimatingRef.current = true;
     playSound('shift');
 
-    // 슬라이드 애니메이션 시작
-    setShiftAnim({
-      dir: arrow.dir,
-      index: arrow.index,
-      incomingTile: spareTile,
+    const enteringTile = { ...spareTile };
+    setShiftingState({
+      arrow,
+      enteringTile,
+      active: false,
     });
 
-    await new Promise((r) => setTimeout(r, 420));
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setShiftingState({
+          arrow,
+          enteringTile,
+          active: true,
+        });
+      });
+    });
 
-    const nextBoard = board.map((row) => [...row]);
-    let pushedOutTile: BoardTile;
+    window.setTimeout(() => {
+      const nextBoard = board.map((row) => [...row]);
+      let pushedOutTile: BoardTile;
 
-    if (arrow.dir === 'DOWN') {
-      const c = arrow.index;
-      pushedOutTile = nextBoard[6][c];
-      for (let r = 6; r > 0; r--) nextBoard[r][c] = nextBoard[r - 1][c];
-      nextBoard[0][c] = spareTile;
-    } else if (arrow.dir === 'UP') {
-      const c = arrow.index;
-      pushedOutTile = nextBoard[0][c];
-      for (let r = 0; r < 6; r++) nextBoard[r][c] = nextBoard[r + 1][c];
-      nextBoard[6][c] = spareTile;
-    } else if (arrow.dir === 'RIGHT') {
-      const r = arrow.index;
-      pushedOutTile = nextBoard[r][6];
-      for (let c = 6; c > 0; c--) nextBoard[r][c] = nextBoard[r][c - 1];
-      nextBoard[r][0] = spareTile;
-    } else {
-      const r = arrow.index;
-      pushedOutTile = nextBoard[r][0];
-      for (let c = 0; c < 6; c++) nextBoard[r][c] = nextBoard[r][c + 1];
-      nextBoard[r][6] = spareTile;
-    }
-
-    const updatedPlayers = players.map((p) => {
-      let { row, col } = p;
-      if (arrow.dir === 'DOWN' && col === arrow.index) {
-        row = row === 6 ? 0 : row + 1;
-      } else if (arrow.dir === 'UP' && col === arrow.index) {
-        row = row === 0 ? 6 : row - 1;
-      } else if (arrow.dir === 'RIGHT' && row === arrow.index) {
-        col = col === 6 ? 0 : col + 1;
-      } else if (arrow.dir === 'LEFT' && row === arrow.index) {
-        col = col === 0 ? 6 : col - 1;
+      if (arrow.dir === 'DOWN') {
+        const c = arrow.index;
+        pushedOutTile = nextBoard[6][c];
+        for (let r = 6; r > 0; r--) nextBoard[r][c] = nextBoard[r - 1][c];
+        nextBoard[0][c] = enteringTile;
+      } else if (arrow.dir === 'UP') {
+        const c = arrow.index;
+        pushedOutTile = nextBoard[0][c];
+        for (let r = 0; r < 6; r++) nextBoard[r][c] = nextBoard[r + 1][c];
+        nextBoard[6][c] = enteringTile;
+      } else if (arrow.dir === 'RIGHT') {
+        const r = arrow.index;
+        pushedOutTile = nextBoard[r][6];
+        for (let c = 6; c > 0; c--) nextBoard[r][c] = nextBoard[r][c - 1];
+        nextBoard[r][0] = enteringTile;
+      } else {
+        const r = arrow.index;
+        pushedOutTile = nextBoard[r][0];
+        for (let c = 0; c < 6; c++) nextBoard[r][c] = nextBoard[r][c + 1];
+        nextBoard[r][6] = enteringTile;
       }
-      return { ...p, row, col };
-    });
 
-    setBoard(nextBoard);
-    setSpareTile(pushedOutTile);
-    setPlayers(updatedPlayers);
-    setShiftAnim(null);
-    setForbiddenArrowId(arrow.oppositeId);
-    setLastPushedArrowId(arrow.id);
-    setTurnPhase('MOVE');
-    isAnimatingRef.current = false;
+      const updatedPlayers = players.map((p) => {
+        let { row, col } = p;
+        if (arrow.dir === 'DOWN' && col === arrow.index) {
+          row = row === 6 ? 0 : row + 1;
+        } else if (arrow.dir === 'UP' && col === arrow.index) {
+          row = row === 0 ? 6 : row - 1;
+        } else if (arrow.dir === 'RIGHT' && row === arrow.index) {
+          col = col === 6 ? 0 : col + 1;
+        } else if (arrow.dir === 'LEFT' && row === arrow.index) {
+          col = col === 0 ? 6 : col - 1;
+        }
+        return { ...p, row, col };
+      });
 
-    const cheer = SHIFT_CHEERS[Math.floor(Math.random() * SHIFT_CHEERS.length)];
-    speakKorean(cheer);
-    showToast(`✨ ${cheer} 초록색 길을 눌러 이동하세요!`, 'bonus');
+      setBoard(nextBoard);
+      setSpareTile(pushedOutTile);
+      setPlayers(updatedPlayers);
+      setShiftingState(null);
+      setForbiddenArrowId(arrow.oppositeId);
+      setLastPushedArrowId(arrow.id);
+      setTurnPhase('MOVE');
+      isAnimatingRef.current = false;
+
+      const cheer = SHIFT_CHEERS[Math.floor(Math.random() * SHIFT_CHEERS.length)];
+      speakKorean(cheer);
+      showToast(`✨ ${cheer} 이동할 칸을 선택하세요!`, 'bonus');
+    }, 430);
   };
 
   const advanceTurn = (nextPlayers: LabyrinthPlayer[]) => {
@@ -559,12 +579,12 @@ export default function Page10() {
     const nextGoal = nextPlayer.targetStack[0];
     if (nextGoal) {
       showToast(
-        `👉 다음 차례: ${nextPlayer.name}님! 목표 보물 [${nextGoal.emoji} ${nextGoal.name}]`,
+        `👉 ${nextPlayer.name}님 차례! 목표 보물: ${nextGoal.emoji} ${nextGoal.name}`,
         'info'
       );
     } else {
       showToast(
-        `👉 다음 차례: ${nextPlayer.name}님! 모든 보물을 모았으니 출발지(🏠)로 돌아가세요!`,
+        `👉 ${nextPlayer.name}님 차례! 보물을 모두 모았으니 시작 모서리(🏠)로 돌아가세요!`,
         'bonus'
       );
     }
@@ -578,7 +598,7 @@ export default function Page10() {
     const path = reachableMap.get(`${targetRow},${targetCol}`);
 
     if (!path) {
-      showToast('🚧 길이 끊어져 있어 이동할 수 없는 칸입니다!', 'info');
+      showToast('🚧 길이 막혀 있어 이동할 수 없는 칸입니다!', 'info');
       return;
     }
 
@@ -603,8 +623,8 @@ export default function Page10() {
     const updatedPlayers = players.map((p, idx) => {
       if (idx !== currentPlayerIdx) return p;
 
-      let nextStack = [...p.targetStack];
-      let nextCollected = [...p.collected];
+      const nextStack = [...p.targetStack];
+      const nextCollected = [...p.collected];
 
       if (
         currentTargetTreasure &&
@@ -651,22 +671,23 @@ export default function Page10() {
       setWinner(champ);
       setGameState('GAME_OVER');
       playSound('win');
-      speakKorean(`축하합니다! ${champ.name}님이 모든 보물을 찾고 우승했습니다!`);
+      speakKorean(`원더풀! 축하합니다! ${champ.name}님이 모든 보물을 찾고 우승했습니다!`);
       return;
     }
 
     if (foundTreasure && currentTargetTreasure) {
       playSound('treasure');
-      speakKorean(`판타스틱! ${currentTargetTreasure.name} 보물을 찾았습니다!`);
       const remainingCount = updatedPlayers[currentPlayerIdx].targetStack.length;
       if (remainingCount === 0) {
+        speakKorean(`원더풀! ${currentTargetTreasure.name} 획득! 이제 집으로 돌아가세요!`);
         showToast(
-          `🎉 [${currentTargetTreasure.emoji} ${currentTargetTreasure.name}] 획득! 이제 출발지(🏠)로 돌아가면 우승!`,
+          `🎉 원더풀! [${currentTargetTreasure.emoji} ${currentTargetTreasure.name}] 획득! 이제 출발 모서리로 돌아가세요!`,
           'treasure'
         );
       } else {
+        speakKorean(`원더풀! ${currentTargetTreasure.name} 보물을 찾았어요!`);
         showToast(
-          `💎 [${currentTargetTreasure.emoji} ${currentTargetTreasure.name}] 보물 획득! (남은 보물: ${remainingCount}개)`,
+          `💎 원더풀! [${currentTargetTreasure.emoji} ${currentTargetTreasure.name}] 획득! (남은 보물: ${remainingCount}개)`,
           'treasure'
         );
       }
@@ -679,7 +700,64 @@ export default function Page10() {
     }
   };
 
-  // 고대 미로 석판 질감과 그림이 적용된 타일 그래픽 렌더링
+  const getCellShiftStyle = (r: number, c: number): React.CSSProperties => {
+    if (!shiftingState) return {};
+    const { arrow, active } = shiftingState;
+    const isAffected =
+      ((arrow.dir === 'DOWN' || arrow.dir === 'UP') && c === arrow.index) ||
+      ((arrow.dir === 'RIGHT' || arrow.dir === 'LEFT') && r === arrow.index);
+
+    if (!isAffected) return {};
+
+    if (!active) {
+      return { transform: 'translate(0px, 0px)', transition: 'none', zIndex: 8 };
+    }
+
+    let tx = '0%';
+    let ty = '0%';
+    if (arrow.dir === 'DOWN') ty = 'calc(100% + 4px)';
+    if (arrow.dir === 'UP') ty = 'calc(-100% - 4px)';
+    if (arrow.dir === 'RIGHT') tx = 'calc(100% + 4px)';
+    if (arrow.dir === 'LEFT') tx = 'calc(-100% - 4px)';
+
+    return {
+      transform: `translate(${tx}, ${ty})`,
+      transition: 'transform 0.42s cubic-bezier(0.22, 1, 0.36, 1)',
+      zIndex: 8,
+    };
+  };
+
+  const getEnteringTileStyle = (r: number, c: number): React.CSSProperties | null => {
+    if (!shiftingState) return null;
+    const { arrow, active } = shiftingState;
+
+    const isEntryCell =
+      (arrow.dir === 'DOWN' && r === 0 && c === arrow.index) ||
+      (arrow.dir === 'UP' && r === 6 && c === arrow.index) ||
+      (arrow.dir === 'RIGHT' && r === arrow.index && c === 0) ||
+      (arrow.dir === 'LEFT' && r === arrow.index && c === 6);
+
+    if (!isEntryCell) return null;
+
+    let startTx = '0%';
+    let startTy = '0%';
+    if (arrow.dir === 'DOWN') startTy = 'calc(-100% - 4px)';
+    if (arrow.dir === 'UP') startTy = 'calc(100% + 4px)';
+    if (arrow.dir === 'RIGHT') startTx = 'calc(-100% - 4px)';
+    if (arrow.dir === 'LEFT') startTx = 'calc(100% + 4px)';
+
+    if (!active) {
+      return {
+        transform: `translate(${startTx}, ${startTy})`,
+        transition: 'none',
+      };
+    }
+    return {
+      transform: 'translate(0%, 0%)',
+      transition: 'transform 0.42s cubic-bezier(0.22, 1, 0.36, 1)',
+    };
+  };
+
   const renderTileGraphic = (tile: BoardTile, isSpare = false) => {
     const [top, right, bottom, left] = getOpenDirections(tile.shape, tile.rotation);
     const currentPlayer = players[currentPlayerIdx];
@@ -692,99 +770,126 @@ export default function Page10() {
 
     return (
       <div
-        className={`maze-tile ${tile.fixed ? 'fixed-tile' : 'movable-tile'} ${
-          isSpare ? 'spare-preview-tile' : ''
-        }`}
+        className={`maze-tile variant-${tile.stoneVariant} ${
+          tile.fixed ? 'fixed-tile' : 'movable-tile'
+        } ${isSpare ? 'spare-preview-tile' : ''}`}
       >
         <svg viewBox="0 0 100 100" className="tile-path-svg">
           <defs>
-            <linearGradient id={`stonePath-${tile.uid}`} x1="0" y1="0" x2="1" y2="1">
+            <linearGradient id={`roadGrad-${tile.uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#fef3c7" />
-              <stop offset="50%" stopColor="#fde68a" />
+              <stop offset="55%" stopColor="#fde68a" />
               <stop offset="100%" stopColor="#fcd34d" />
             </linearGradient>
           </defs>
 
-          {/* 고대 벽면 장식 (이끼 & 석조 블록 라인) */}
-          <rect x="4" y="4" width="24" height="24" rx="4" fill="rgba(15, 23, 42, 0.35)" />
-          <rect x="72" y="4" width="24" height="24" rx="4" fill="rgba(15, 23, 42, 0.35)" />
-          <rect x="4" y="72" width="24" height="24" rx="4" fill="rgba(15, 23, 42, 0.35)" />
-          <rect x="72" y="72" width="24" height="24" rx="4" fill="rgba(15, 23, 42, 0.35)" />
-          <circle cx="14" cy="14" r="3" fill="rgba(52, 211, 153, 0.35)" />
-          <circle cx="86" cy="86" r="3.5" fill="rgba(52, 211, 153, 0.3)" />
+          <rect x="3" y="3" width="25" height="25" rx="4" fill="rgba(15, 23, 42, 0.32)" />
+          <rect x="72" y="3" width="25" height="25" rx="4" fill="rgba(15, 23, 42, 0.32)" />
+          <rect x="3" y="72" width="25" height="25" rx="4" fill="rgba(15, 23, 42, 0.32)" />
+          <rect x="72" y="72" width="25" height="25" rx="4" fill="rgba(15, 23, 42, 0.32)" />
 
-          {/* 황금 사암 통로 바닥 */}
-          <rect
-            x="30"
-            y="30"
-            width="40"
-            height="40"
-            rx="6"
-            fill={`url(#stonePath-${tile.uid})`}
-          />
-          {top && <rect x="30" y="0" width="40" height="50" fill={`url(#stonePath-${tile.uid})`} />}
+          {tile.stoneVariant === 0 && (
+            <>
+              <circle cx="14" cy="14" r="4" fill="rgba(16, 185, 129, 0.25)" />
+              <circle cx="85" cy="84" r="5" fill="rgba(16, 185, 129, 0.22)" />
+            </>
+          )}
+          {tile.stoneVariant === 1 && (
+            <>
+              <path
+                d="M10 15 L20 15 M15 10 L15 20"
+                stroke="rgba(251, 191, 36, 0.28)"
+                strokeWidth="2"
+              />
+              <path
+                d="M80 85 L90 85 M85 80 L85 90"
+                stroke="rgba(251, 191, 36, 0.28)"
+                strokeWidth="2"
+              />
+            </>
+          )}
+          {tile.stoneVariant === 2 && (
+            <>
+              <circle
+                cx="85"
+                cy="15"
+                r="5"
+                fill="none"
+                stroke="rgba(148, 163, 184, 0.28)"
+                strokeWidth="2"
+              />
+              <circle
+                cx="15"
+                cy="85"
+                r="5"
+                fill="none"
+                stroke="rgba(148, 163, 184, 0.28)"
+                strokeWidth="2"
+              />
+            </>
+          )}
+
+          <rect x="31" y="31" width="38" height="38" rx="6" fill={`url(#roadGrad-${tile.uid})`} />
+
+          {top && <rect x="31" y="0" width="38" height="50" fill={`url(#roadGrad-${tile.uid})`} />}
           {bottom && (
-            <rect x="30" y="50" width="40" height="50" fill={`url(#stonePath-${tile.uid})`} />
+            <rect x="31" y="50" width="38" height="50" fill={`url(#roadGrad-${tile.uid})`} />
           )}
-          {left && <rect x="0" y="30" width="50" height="40" fill={`url(#stonePath-${tile.uid})`} />}
+          {left && <rect x="0" y="31" width="50" height="38" fill={`url(#roadGrad-${tile.uid})`} />}
           {right && (
-            <rect x="50" y="30" width="50" height="40" fill={`url(#stonePath-${tile.uid})`} />
+            <rect x="50" y="31" width="50" height="38" fill={`url(#roadGrad-${tile.uid})`} />
           )}
 
-          {/* 바닥 돌판 타일 줄눈 무늬 */}
-          <line x1="36" y1="50" x2="64" y2="50" stroke="rgba(180, 83, 9, 0.22)" strokeWidth="1.5" />
-          <line x1="50" y1="36" x2="50" y2="64" stroke="rgba(180, 83, 9, 0.22)" strokeWidth="1.5" />
+          <circle cx="44" cy="46" r="2" fill="rgba(180, 83, 9, 0.2)" />
+          <circle cx="56" cy="54" r="2.2" fill="rgba(180, 83, 9, 0.2)" />
+          {top && <circle cx="50" cy="16" r="2" fill="rgba(180, 83, 9, 0.22)" />}
+          {bottom && <circle cx="50" cy="84" r="2" fill="rgba(180, 83, 9, 0.22)" />}
+          {left && <circle cx="16" cy="50" r="2" fill="rgba(180, 83, 9, 0.22)" />}
+          {right && <circle cx="84" cy="50" r="2" fill="rgba(180, 83, 9, 0.22)" />}
 
-          {/* 통로 입체 테두리 벽선 */}
           {top && (
             <>
-              <line x1="30" y1="0" x2="30" y2="30" stroke="#92400e" strokeWidth="3" />
-              <line x1="70" y1="0" x2="70" y2="30" stroke="#92400e" strokeWidth="3" />
+              <line x1="31" y1="0" x2="31" y2="31" stroke="#b45309" strokeWidth="3" />
+              <line x1="69" y1="0" x2="69" y2="31" stroke="#b45309" strokeWidth="3" />
             </>
           )}
           {bottom && (
             <>
-              <line x1="30" y1="70" x2="30" y2="100" stroke="#92400e" strokeWidth="3" />
-              <line x1="70" y1="70" x2="70" y2="100" stroke="#92400e" strokeWidth="3" />
+              <line x1="31" y1="69" x2="31" y2="100" stroke="#b45309" strokeWidth="3" />
+              <line x1="69" y1="69" x2="69" y2="100" stroke="#b45309" strokeWidth="3" />
             </>
           )}
           {left && (
             <>
-              <line x1="0" y1="30" x2="30" y2="30" stroke="#92400e" strokeWidth="3" />
-              <line x1="0" y1="70" x2="30" y2="70" stroke="#92400e" strokeWidth="3" />
+              <line x1="0" y1="31" x2="31" y2="31" stroke="#b45309" strokeWidth="3" />
+              <line x1="0" y1="69" x2="31" y2="69" stroke="#b45309" strokeWidth="3" />
             </>
           )}
           {right && (
             <>
-              <line x1="70" y1="30" x2="100" y2="30" stroke="#92400e" strokeWidth="3" />
-              <line x1="70" y1="70" x2="100" y2="70" stroke="#92400e" strokeWidth="3" />
+              <line x1="69" y1="31" x2="100" y2="31" stroke="#b45309" strokeWidth="3" />
+              <line x1="69" y1="69" x2="100" y2="69" stroke="#b45309" strokeWidth="3" />
             </>
           )}
         </svg>
 
-        {/* 고정 타일 황동 리벳 */}
         {tile.fixed && <span className="fixed-rivet" title="고정 석판" />}
 
-        {/* 플레이어 시작 모서리(집) 표시 */}
         {tile.startCornerOf !== undefined && players[tile.startCornerOf] && (
           <div
             className="corner-home-badge"
             style={{
               backgroundColor: players[tile.startCornerOf].color,
             }}
-            title={`${players[tile.startCornerOf].name}의 출발/복귀 지점`}
+            title={`${players[tile.startCornerOf].name}의 출발/복귀 성문`}
           >
             🏠
           </div>
         )}
 
-        {/* 선명하고 커다란 보물 그림 아이콘 (단어 텍스트 제거) */}
         {tile.treasure && (
-          <div
-            className={`treasure-token ${isMyCurrentGoal ? 'active-goal-token' : ''}`}
-            title={tile.treasure.name}
-          >
-            <span className="treasure-emoji">{tile.treasure.emoji}</span>
+          <div className={`treasure-token ${isMyCurrentGoal ? 'active-goal-token' : ''}`}>
+            <span className="treasure-emoji-big">{tile.treasure.emoji}</span>
           </div>
         )}
       </div>
@@ -829,16 +934,6 @@ export default function Page10() {
     oppositeId: `RIGHT-${idx}`,
   }));
 
-  // 밀기 애니메이션 중 각 칸의 슬라이드 클래스 계산
-  const getCellSlideClass = (r: number, c: number): string => {
-    if (!shiftAnim) return '';
-    if (shiftAnim.dir === 'DOWN' && c === shiftAnim.index) return 'slide-anim-down';
-    if (shiftAnim.dir === 'UP' && c === shiftAnim.index) return 'slide-anim-up';
-    if (shiftAnim.dir === 'RIGHT' && r === shiftAnim.index) return 'slide-anim-right';
-    if (shiftAnim.dir === 'LEFT' && r === shiftAnim.index) return 'slide-anim-left';
-    return '';
-  };
-
   return (
     <div className="lab-container" style={{ background: currentBackground }}>
       {toast && gameState === 'PLAYING' && (
@@ -850,7 +945,7 @@ export default function Page10() {
       {/* 1. 게임 설정 화면 */}
       {gameState === 'SETUP' && (
         <div className="setup-card">
-          <h1 className="setup-title">🧭 어메이징 라비린스 보물찾기</h1>
+          <h1 className="setup-title">🏰 어메이징 라비린스 (보물찾기)</h1>
 
           <div className="setting-section">
             <label className="setting-label">💎 1인당 찾을 보물 개수</label>
@@ -869,7 +964,7 @@ export default function Page10() {
           </div>
 
           <div className="setting-section">
-            <label className="setting-label">👥 탐험가 등록 (2~4명)</label>
+            <label className="setting-label">🧭 탐험가 등록 (2~4명 · 이름 첫 두 글자가 말에 표시됩니다)</label>
             <div className="input-group">
               <input
                 type="text"
@@ -891,7 +986,9 @@ export default function Page10() {
                     <span
                       className="squircle-dot"
                       style={{ backgroundColor: PIECE_COLORS[idx % PIECE_COLORS.length] }}
-                    />
+                    >
+                      {getShortName(player.name)}
+                    </span>
                     {player.name}
                   </span>
                   <button
@@ -907,11 +1004,11 @@ export default function Page10() {
           </div>
 
           <div className="rule-summary-box">
-            <strong>📜 게임 방법:</strong>
+            <strong>📜 보물찾기 규칙:</strong>
             <ul>
-              <li>1단계(길 밀기): 왼쪽 모서리의 여분 타일을 회전시킨 뒤 화살표로 미로 길을 밉니다.</li>
-              <li>2단계(이동): 연결된 길을 따라 자신의 목표 보물 칸으로 이동합니다.</li>
-              <li>보물을 모두 모은 뒤 자신의 시작 모서리(🏠)로 가장 먼저 돌아오면 우승!</li>
+              <li>1단계(길 밀기): 여분 길 카드를 회전한 뒤 화살표(▼▲▶◀)로 미로를 쭉 밀어냅니다.</li>
+              <li>2단계(이동): 초록색으로 연결된 길을 따라 목표 보물 칸으로 이동합니다.</li>
+              <li>모든 보물을 모은 뒤 자신의 시작 모서리(🏠)로 가장 먼저 돌아오면 우승!</li>
             </ul>
           </div>
 
@@ -949,7 +1046,9 @@ export default function Page10() {
                   <span
                     className="squircle-dot"
                     style={{ backgroundColor: PIECE_COLORS[idx % PIECE_COLORS.length] }}
-                  />
+                  >
+                    {getShortName(player.name)}
+                  </span>
                   {player.name}
                 </span>
                 <div className="order-controls">
@@ -983,19 +1082,17 @@ export default function Page10() {
               ⬅️ 설정으로
             </button>
             <button type="button" className="btn btn-success" onClick={startGame}>
-              🚀 미로 탐험 시작! (1인당 {cardsPerPlayer}개)
+              🚀 미로 탐험 시작! (1인당 {cardsPerPlayer}개 보물)
             </button>
           </div>
         </div>
       )}
 
-      {/* 3. 원스크린 태블릿 라비린스 플레이 화면 */}
+      {/* 3. 메인 라비린스 플레이 화면 */}
       {gameState === 'PLAYING' && currentPlayer && spareTile && (
-        <div className="play-wrapper compact-tablet-screen">
-          {/* 상단 슬림 플레이어 현황 바 */}
+        <div className="play-wrapper compact-tablet-mode">
+          {/* 상단 슬림 현황 바 */}
           <div className="game-header compact-header">
-            <div className="rule-badge">💎 목표 {cardsPerPlayer}개</div>
-
             <div className="player-status-bar">
               {players.map((p, idx) => {
                 const isActive = idx === currentPlayerIdx;
@@ -1006,12 +1103,13 @@ export default function Page10() {
                     style={{ borderColor: isActive ? p.color : 'transparent' }}
                   >
                     <div className="player-badge-top">
-                      <span className="squircle-dot" style={{ backgroundColor: p.color }} />
+                      <span className="squircle-dot mini" style={{ backgroundColor: p.color }}>
+                        {getShortName(p.name)}
+                      </span>
                       <strong>{p.name}</strong>
                       <span className="badge-score">
-                        ({p.collected.length}/{cardsPerPlayer})
+                        {p.collected.length}/{cardsPerPlayer}
                       </span>
-                      {isActive && <span className="turn-tag">차례</span>}
                     </div>
                   </div>
                 );
@@ -1023,269 +1121,260 @@ export default function Page10() {
               className="btn btn-secondary btn-compact-setup"
               onClick={() => setGameState('SETUP')}
             >
-              ⚙️ 설정
+              ⚙️
             </button>
           </div>
 
-          {/* 메인 가로 2단 레이아웃: [좌측 보드 + 좌상단 모서리 여분타일] / [우측 컴팩트 보물 패널] */}
-          <div className="labyrinth-main-layout">
-            {/* 좌측 보드 영역 */}
-            <div className="board-corner-dock-wrapper">
-              {/* 게임판 좌상단 모서리에 떠 있는 컴팩트 타일 회전 컨트롤 (스크롤 불필요) */}
-              <div
-                className={`corner-spare-dock ${turnPhase === 'SHIFT' ? 'active-shift' : ''}`}
-                title="클릭하여 여분 타일 회전"
-              >
-                <div className="corner-dock-label">다음 길</div>
+          {/* 상단: 고대 미로 보드판 */}
+          <div className="maze-board-outer">
+            <div className="maze-ancient-crest">⚜️ AMAZING LABYRINTH ⚜️</div>
+
+            {/* 상단 화살표 행 */}
+            <div className="arrow-row-horizontal">
+              <div className="corner-compass">🧭</div>
+              {Array.from({ length: 7 }).map((_, c) => {
+                const arrow = topArrows.find((a) => a.index === c);
+                if (!arrow) return <div key={`top-empty-${c}`} className="arrow-cell empty" />;
+                const disabled =
+                  turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
+                return (
+                  <button
+                    key={arrow.id}
+                    type="button"
+                    disabled={disabled}
+                    className={`push-arrow-btn ${
+                      lastPushedArrowId === arrow.id ? 'last-pushed' : ''
+                    }`}
+                    onClick={() => handlePushTile(arrow)}
+                    title={`${c + 1}열 아래로 밀기`}
+                  >
+                    ▼
+                  </button>
+                );
+              })}
+              <div className="corner-compass">⚜️</div>
+            </div>
+
+            {/* 중단: 좌측 화살표 + 7x7 미로 격자 + 우측 화살표 */}
+            <div className="maze-middle-band">
+              <div className="arrow-col-vertical">
+                {Array.from({ length: 7 }).map((_, r) => {
+                  const arrow = leftArrows.find((a) => a.index === r);
+                  if (!arrow) return <div key={`left-empty-${r}`} className="arrow-cell empty" />;
+                  const disabled =
+                    turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
+                  return (
+                    <button
+                      key={arrow.id}
+                      type="button"
+                      disabled={disabled}
+                      className={`push-arrow-btn ${
+                        lastPushedArrowId === arrow.id ? 'last-pushed' : ''
+                      }`}
+                      onClick={() => handlePushTile(arrow)}
+                      title={`${r + 1}행 오른쪽으로 밀기`}
+                    >
+                      ▶
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 7x7 미로 보드 */}
+              <div className="maze-grid-7x7">
+                {board.map((rowArr, r) =>
+                  rowArr.map((tile, c) => {
+                    const cellKey = `${r},${c}`;
+                    const isReachable =
+                      turnPhase === 'MOVE' && !shiftingState && reachableCells.has(cellKey);
+                    const isCurrentPos =
+                      currentPlayer.row === r && currentPlayer.col === c;
+                    const piecesHere = players.filter((p) => p.row === r && p.col === c);
+
+                    const shiftStyle = getCellShiftStyle(r, c);
+                    const enteringStyle = getEnteringTileStyle(r, c);
+
+                    return (
+                      <div
+                        key={tile.uid}
+                        className={`maze-cell-slot ${
+                          isReachable ? 'reachable-cell' : ''
+                        } ${isCurrentPos ? 'current-player-cell' : ''}`}
+                        onClick={() => {
+                          if (turnPhase === 'MOVE' && !shiftingState) {
+                            handleSelectMoveTarget(r, c);
+                          }
+                        }}
+                      >
+                        <div className="tile-slide-layer" style={shiftStyle}>
+                          {renderTileGraphic(tile)}
+
+                          {piecesHere.length > 0 && (
+                            <div className="cell-pieces-cluster">
+                              {piecesHere.map((p, pIdx) => (
+                                <div
+                                  key={p.id}
+                                  className={`explorer-squircle-pawn ${
+                                    p.id === currentPlayer.id ? 'active-pawn' : ''
+                                  }`}
+                                  style={{
+                                    backgroundColor: p.color,
+                                    transform: `translate(${(pIdx % 2) * 7 - 3.5}px, ${
+                                      Math.floor(pIdx / 2) * 7 - 3.5
+                                    }px)`,
+                                  }}
+                                  title={p.name}
+                                >
+                                  <span className="pawn-name-tag">{getShortName(p.name)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {shiftingState && enteringStyle && (
+                          <div className="tile-entering-layer" style={enteringStyle}>
+                            {renderTileGraphic(shiftingState.enteringTile)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="arrow-col-vertical">
+                {Array.from({ length: 7 }).map((_, r) => {
+                  const arrow = rightArrows.find((a) => a.index === r);
+                  if (!arrow) return <div key={`right-empty-${r}`} className="arrow-cell empty" />;
+                  const disabled =
+                    turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
+                  return (
+                    <button
+                      key={arrow.id}
+                      type="button"
+                      disabled={disabled}
+                      className={`push-arrow-btn ${
+                        lastPushedArrowId === arrow.id ? 'last-pushed' : ''
+                      }`}
+                      onClick={() => handlePushTile(arrow)}
+                      title={`${r + 1}행 왼쪽으로 밀기`}
+                    >
+                      ◀
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 하단 화살표 행 */}
+            <div className="arrow-row-horizontal">
+              <div className="corner-compass">⚜️</div>
+              {Array.from({ length: 7 }).map((_, c) => {
+                const arrow = bottomArrows.find((a) => a.index === c);
+                if (!arrow) return <div key={`bot-empty-${c}`} className="arrow-cell empty" />;
+                const disabled =
+                  turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
+                return (
+                  <button
+                    key={arrow.id}
+                    type="button"
+                    disabled={disabled}
+                    className={`push-arrow-btn ${
+                      lastPushedArrowId === arrow.id ? 'last-pushed' : ''
+                    }`}
+                    onClick={() => handlePushTile(arrow)}
+                    title={`${c + 1}열 위로 밀기`}
+                  >
+                    ▲
+                  </button>
+                );
+              })}
+              <div className="corner-compass">🧭</div>
+            </div>
+          </div>
+
+          {/* 하단 도크: 좌측(작은 여분 카드 돌리기) + 우측(목표 보물 및 기타 정보) */}
+          <div
+            className="bottom-compact-dock"
+            style={{ borderTop: `4px solid ${currentPlayer.color}` }}
+          >
+            <div className="dock-left-rotate-card">
+              <div className="dock-sub-label">🧩 여분 길카드</div>
+              <div className="dock-rotate-body">
                 <div
-                  className="corner-spare-tile-box"
+                  className="mini-spare-tile-box"
                   onClick={() => rotateSpareTile(1)}
+                  title="터치하여 회전"
                 >
                   {renderTileGraphic(spareTile, true)}
                 </div>
-                <div className="corner-rotate-btns">
+                <div className="mini-rotate-buttons">
                   <button
                     type="button"
-                    disabled={turnPhase !== 'SHIFT'}
+                    className="btn-mini-rot"
+                    disabled={turnPhase !== 'SHIFT' || !!shiftingState}
                     onClick={() => rotateSpareTile(-1)}
-                    title="왼쪽으로 90도 회전"
                   >
-                    ↺
+                    ↺ 좌회전
                   </button>
                   <button
                     type="button"
-                    disabled={turnPhase !== 'SHIFT'}
+                    className="btn-mini-rot primary"
+                    disabled={turnPhase !== 'SHIFT' || !!shiftingState}
                     onClick={() => rotateSpareTile(1)}
-                    title="오른쪽으로 90도 회전"
                   >
-                    ↻
+                    ↻ 우회전
                   </button>
-                </div>
-              </div>
-
-              {/* 7x7 고대 석조 미로 보드 + 외곽 화살표 */}
-              <div className="maze-board-outer">
-                <div className="maze-ancient-border-glow" />
-
-                {/* 상단 화살표 행 */}
-                <div className="arrow-row-horizontal">
-                  <div className="arrow-spacer corner-emblem">✦</div>
-                  {Array.from({ length: 7 }).map((_, c) => {
-                    const arrow = topArrows.find((a) => a.index === c);
-                    if (!arrow) return <div key={`top-empty-${c}`} className="arrow-cell empty" />;
-                    const disabled =
-                      turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId;
-                    return (
-                      <button
-                        key={arrow.id}
-                        type="button"
-                        disabled={disabled}
-                        className={`push-arrow-btn ${
-                          lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                        }`}
-                        onClick={() => handlePushTile(arrow)}
-                        title={`${c + 1}열 아래로 밀기`}
-                      >
-                        ▼
-                      </button>
-                    );
-                  })}
-                  <div className="arrow-spacer corner-emblem">✦</div>
-                </div>
-
-                {/* 중단: 좌측 화살표 + 7x7 보드 그리드 + 우측 화살표 */}
-                <div className="maze-middle-band">
-                  <div className="arrow-col-vertical">
-                    {Array.from({ length: 7 }).map((_, r) => {
-                      const arrow = leftArrows.find((a) => a.index === r);
-                      if (!arrow) return <div key={`left-empty-${r}`} className="arrow-cell empty" />;
-                      const disabled =
-                        turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId;
-                      return (
-                        <button
-                          key={arrow.id}
-                          type="button"
-                          disabled={disabled}
-                          className={`push-arrow-btn ${
-                            lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                          }`}
-                          onClick={() => handlePushTile(arrow)}
-                          title={`${r + 1}행 오른쪽으로 밀기`}
-                        >
-                          ▶
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* 7x7 미로 타일 격자 */}
-                  <div className="maze-grid-7x7">
-                    {board.map((rowArr, r) =>
-                      rowArr.map((tile, c) => {
-                        const cellKey = `${r},${c}`;
-                        const isReachable =
-                          turnPhase === 'MOVE' && reachableCells.has(cellKey);
-                        const isCurrentPos =
-                          currentPlayer.row === r && currentPlayer.col === c;
-                        const piecesHere = players.filter(
-                          (p) => p.row === r && p.col === c
-                        );
-                        const slideClass = getCellSlideClass(r, c);
-
-                        return (
-                          <div
-                            key={tile.uid}
-                            className={`maze-cell-slot ${
-                              isReachable ? 'reachable-cell' : ''
-                            } ${isCurrentPos ? 'current-player-cell' : ''} ${slideClass}`}
-                            onClick={() => {
-                              if (turnPhase === 'MOVE') {
-                                handleSelectMoveTarget(r, c);
-                              }
-                            }}
-                          >
-                            {renderTileGraphic(tile)}
-
-                            {/* 둥근 네모(Squircle) 모양 탐험가 말 */}
-                            {piecesHere.length > 0 && (
-                              <div className="cell-pieces-cluster">
-                                {piecesHere.map((p, pIdx) => (
-                                  <div
-                                    key={p.id}
-                                    className={`explorer-squircle-pawn ${
-                                      p.id === currentPlayer.id ? 'active-pawn' : ''
-                                    }`}
-                                    style={{
-                                      backgroundColor: p.color,
-                                      transform:
-                                        piecesHere.length > 1
-                                          ? `translate(${(pIdx % 2) * 8 - 4}px, ${
-                                              Math.floor(pIdx / 2) * 8 - 4
-                                            }px)`
-                                          : 'none',
-                                    }}
-                                    title={p.name}
-                                  >
-                                    <span>{p.name.slice(0, 1)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <div className="arrow-col-vertical">
-                    {Array.from({ length: 7 }).map((_, r) => {
-                      const arrow = rightArrows.find((a) => a.index === r);
-                      if (!arrow) return <div key={`right-empty-${r}`} className="arrow-cell empty" />;
-                      const disabled =
-                        turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId;
-                      return (
-                        <button
-                          key={arrow.id}
-                          type="button"
-                          disabled={disabled}
-                          className={`push-arrow-btn ${
-                            lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                          }`}
-                          onClick={() => handlePushTile(arrow)}
-                          title={`${r + 1}행 왼쪽으로 밀기`}
-                        >
-                          ◀
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 하단 화살표 행 */}
-                <div className="arrow-row-horizontal">
-                  <div className="arrow-spacer corner-emblem">✦</div>
-                  {Array.from({ length: 7 }).map((_, c) => {
-                    const arrow = bottomArrows.find((a) => a.index === c);
-                    if (!arrow) return <div key={`bot-empty-${c}`} className="arrow-cell empty" />;
-                    const disabled =
-                      turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId;
-                    return (
-                      <button
-                        key={arrow.id}
-                        type="button"
-                        disabled={disabled}
-                        className={`push-arrow-btn ${
-                          lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                        }`}
-                        onClick={() => handlePushTile(arrow)}
-                        title={`${c + 1}열 위로 밀기`}
-                      >
-                        ▲
-                      </button>
-                    );
-                  })}
-                  <div className="arrow-spacer corner-emblem">✦</div>
                 </div>
               </div>
             </div>
 
-            {/* 우측: 컴팩트 목표 보물 & 진행 안내 패널 */}
-            <div className="control-side-panel">
-              <div
-                className="turn-status-card"
-                style={{ borderTop: `6px solid ${currentPlayer.color}` }}
-              >
-                <div className="step-pill">
-                  {turnPhase === 'SHIFT'
-                    ? '1단계: 왼쪽 상단 타일 회전 후 화살표 밀기'
-                    : '2단계: 초록색 길 칸을 눌러 말 이동'}
-                </div>
-                <h2 className="current-player-title">{currentPlayer.name}님 차례</h2>
+            <div className="dock-right-info-card">
+              <div className="dock-info-top-row">
+                <span
+                  className="turn-owner-pill"
+                  style={{ backgroundColor: currentPlayer.color }}
+                >
+                  {currentPlayer.name} ({getShortName(currentPlayer.name)})
+                </span>
+                <span className="step-status-badge">
+                  {turnPhase === 'SHIFT' ? '1단계: 화살표로 길 밀기' : '2단계: 초록 길 터치 이동'}
+                </span>
+              </div>
 
-                {/* 현재 찾아야 할 보물 카드 (그림 중심) */}
-                <div className="target-treasure-card">
-                  <div className="target-card-label">🎯 이번에 찾을 보물</div>
+              <div className="dock-goal-and-bag">
+                <div className="dock-goal-box">
                   {currentTarget ? (
                     <>
-                      <div className="target-card-emoji">{currentTarget.emoji}</div>
-                      <div className="target-card-name">{currentTarget.name}</div>
+                      <span className="dock-goal-emoji">{currentTarget.emoji}</span>
+                      <div className="dock-goal-texts">
+                        <span className="dock-goal-caption">찾을 보물</span>
+                        <strong className="dock-goal-name">{currentTarget.name}</strong>
+                      </div>
                     </>
                   ) : (
-                    <div className="return-home-notice">
-                      <div style={{ fontSize: '34px' }}>🏠</div>
-                      <strong>보물 수집 완료!</strong>
-                      <p>내 시작 모서리(🏠)로 돌아가면 우승!</p>
-                    </div>
+                    <>
+                      <span className="dock-goal-emoji">🏠</span>
+                      <div className="dock-goal-texts">
+                        <span className="dock-goal-caption">수집 완료!</span>
+                        <strong className="dock-goal-name">시작 성문 복귀</strong>
+                      </div>
+                    </>
                   )}
                 </div>
 
-                {/* 단계별 안내 메시지 */}
-                <div className="guide-box-compact">
-                  {turnPhase === 'SHIFT' ? (
-                    <p>
-                      좌상단 <strong>[다음 길]</strong> 타일을 눌러 회전시킨 뒤, 보드 테두리의
-                      화살표(<strong>▼ ▲ ▶ ◀</strong>)를 눌러 길을 쭉 밀어주세요!
-                    </p>
-                  ) : (
-                    <p>
-                      초록색으로 빛나는 길 중 원하는 칸을 터치하세요! (제자리를 누르면 턴을
-                      마칩니다)
-                    </p>
-                  )}
-                </div>
-
-                {/* 획득한 보물 목록 */}
-                <div className="collected-words-box">
-                  <div className="collected-title">
-                    🏆 모은 보물 ({currentPlayer.collected.length}/{cardsPerPlayer})
-                  </div>
-                  <div className="collected-chips">
+                <div className="dock-bag-box">
+                  <span className="dock-bag-title">
+                    획득 보물 ({currentPlayer.collected.length}/{cardsPerPlayer})
+                  </span>
+                  <div className="dock-bag-icons">
                     {currentPlayer.collected.length === 0 ? (
-                      <span className="empty-collected">아직 모은 보물이 없습니다.</span>
+                      <span className="dock-bag-empty">없음</span>
                     ) : (
                       currentPlayer.collected.map((item) => (
-                        <span key={item.id} className="word-badge-chip">
-                          {item.emoji} {item.name}
+                        <span key={item.id} className="bag-emoji-badge" title={item.name}>
+                          {item.emoji}
                         </span>
                       ))
                     )}
@@ -1317,12 +1406,12 @@ export default function Page10() {
 
           <div className="modal-content">
             <div className="modal-trophy">👑🏆👑</div>
-            <div className="congrats-banner">✨ CONGRATULATIONS! ✨</div>
+            <div className="congrats-banner">✨ WONDERFUL! CONGRATULATIONS! ✨</div>
             <h2 style={{ margin: '6px 0 8px', color: '#0f172a' }}>
               {winner.name}님 최종 우승! 🌟
             </h2>
             <p className="modal-subtext">
-              보물 {cardsPerPlayer}개를 모두 찾고 가장 먼저 미로를 탈출했습니다!
+              보물 {cardsPerPlayer}개를 모두 찾고 무사히 미로를 탈출했습니다!
             </p>
 
             <div className="rank-list">
@@ -1331,12 +1420,14 @@ export default function Page10() {
                 return (
                   <div key={p.id} className={`rank-item ${isChamp ? 'winner' : ''}`}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span className="squircle-dot" style={{ backgroundColor: p.color }} />
+                      <span className="squircle-dot mini" style={{ backgroundColor: p.color }}>
+                        {getShortName(p.name)}
+                      </span>
                       {isChamp ? '🥇 ' : ''}
                       {p.name}
                     </span>
                     <span>
-                      보물: {p.collected.length} / {cardsPerPlayer}개
+                      획득 보물: {p.collected.length} / {cardsPerPlayer}개
                     </span>
                   </div>
                 );
