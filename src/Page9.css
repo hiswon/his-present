@@ -193,7 +193,7 @@
 .yut-toast {
   position: fixed;
   top: 70px;
-  left: 40%;
+  left: 36%;
   transform: translateX(-50%);
   padding: 14px 28px;
   border-radius: 999px;
@@ -207,7 +207,7 @@
 }
 
 .yut-toast.info {
-  background: #1e293be5;
+  background: #1e293bb0;
 }
 
 .yut-toast.bonus,
