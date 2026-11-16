@@ -10,6 +10,7 @@ import Page6 from './Page6';
 import Page7 from './Page7';
 import Page8 from './Page8';
 import Page9 from './Page9';
+import Page10 from './Page10';
 
 const App: React.FC = () => {
   return (
@@ -26,6 +27,7 @@ const App: React.FC = () => {
         <Route path="/page7" element={<Page7 />} />
         <Route path="/page8" element={<Page8 />} />
         <Route path="/page9" element={<Page9 />} />
+        <Route path="/page10" element={<Page10 />} />
       </Routes>
     </BrowserRouter>
   );
