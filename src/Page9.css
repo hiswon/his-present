@@ -3,7 +3,7 @@
   inset: 0;
   width: 100%;
   height: 100vh;
-  padding: 16px 16px 80px;
+  padding: 14px 12px 60px;
   font-family: system-ui, -apple-system, sans-serif;
   color: #1e293b;
   box-sizing: border-box;
@@ -59,9 +59,8 @@
   background: #ffffff;
   font-weight: 800;
   font-size: 15px;
-  color: #475569;
+  color: #556947;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
 .count-btn.active {
@@ -84,7 +83,6 @@
   width: 20px;
   height: 20px;
   accent-color: #3b82f6;
-  cursor: pointer;
 }
 
 .input-group {
@@ -100,11 +98,6 @@
   border-radius: 12px;
   font-size: 15px;
   outline: none;
-  min-width: 0;
-}
-
-.player-input:focus {
-  border-color: #3b82f6;
 }
 
 .player-list,
@@ -143,16 +136,10 @@
   font-weight: 700;
   cursor: pointer;
   border: none;
-  transition: transform 0.1s, opacity 0.2s;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  white-space: nowrap;
-}
-
-.btn:active {
-  transform: scale(0.97);
 }
 
 .btn-primary {
@@ -173,11 +160,6 @@
   padding: 14px;
 }
 
-.btn-success:disabled {
-  background: #cbd5e1;
-  cursor: not-allowed;
-}
-
 .btn-delete {
   background: transparent;
   color: #ef4444;
@@ -191,7 +173,6 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
-  gap: 8px;
 }
 
 .order-controls {
@@ -208,30 +189,25 @@
   cursor: pointer;
 }
 
-.order-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* 토스트 알림 */
+/* 1. 알림 토스트 위치를 아래쪽으로 내려 참가자 상태바가 가려지지 않게 수정 */
 .yut-toast {
   position: fixed;
-  top: 16px;
+  top: 90px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 12px 26px;
+  padding: 14px 28px;
   border-radius: 999px;
   font-weight: 900;
   font-size: 16px;
   z-index: 200;
   color: #ffffff;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.22);
-  animation: toast-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+  animation: toast-pop-bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   pointer-events: none;
 }
 
 .yut-toast.info {
-  background: #1e293b;
+  background: #1e293be5;
 }
 
 .yut-toast.bonus,
@@ -245,13 +221,13 @@
   border: 2px solid #fca5a5;
 }
 
-@keyframes toast-pop {
-  from { opacity: 0; transform: translate(-50%, -15px) scale(0.8); }
+@keyframes toast-pop-bottom {
+  from { opacity: 0; transform: translate(-50%, 20px) scale(0.8); }
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 .play-wrapper {
-  max-width: 1120px;
+  max-width: 900px;
   margin: 0 auto;
 }
 
@@ -260,92 +236,243 @@
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .rule-badge {
   background: #4f46e5;
   color: #ffffff;
-  padding: 8px 14px;
+  padding: 6px 12px;
   border-radius: 20px;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .player-status-bar {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .player-badge-card {
   background: rgba(255, 255, 255, 0.85);
-  padding: 8px 14px;
-  border-radius: 12px;
+  padding: 6px 10px;
+  border-radius: 10px;
   border: 2px solid transparent;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-  transition: all 0.2s;
 }
 
 .player-badge-card.active {
   background: #ffffff;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
 .player-badge-top {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
+  gap: 4px;
+  font-size: 13px;
 }
 
 .turn-tag {
   background: #2563eb;
   color: #ffffff;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 6px;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
   font-weight: 800;
 }
 
 .player-badge-sub {
-  font-size: 12px;
+  font-size: 11px;
   color: #64748b;
-  margin-top: 2px;
-  font-weight: 600;
+  margin-top: 1px;
 }
 
-.main-stage {
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 20px;
-  align-items: start;
+.fullscreen-throw-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 30px 20px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 480px;
+  text-align: center;
 }
 
-@media (max-width: 860px) {
-  .main-stage {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* 보드 + 하단 대기석 통합 스테이지 (오버레이 이동 애니메이션 좌표 기준) */
-.board-column {
+/* 2 & 3. 윷가락 크게 만들기 및 터치 영역 스타일 */
+.yut-touch-stage {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 3px dashed #3b82f6;
+  border-radius: 20px;
+  padding: 24px 16px;
+  margin-top: 16px;
+  margin-bottom: 8px;
   width: 100%;
+  max-width: 460px;
+  cursor: pointer;
+  perspective: 1000px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.yut-touch-stage:hover {
+  transform: scale(1.02);
+  box-shadow: 0 10px 25px rgba(59, 130, 246, 0.25);
+}
+
+.touch-guide-text {
+  font-size: 14px;
+  font-weight: 900;
+  color: #1d4ed8;
+  margin-bottom: 16px;
+  animation: guide-blink 1s infinite alternate;
+}
+
+@keyframes guide-blink {
+  from { opacity: 0.7; }
+  to { opacity: 1; transform: scale(1.05); }
+}
+
+.yut-drone-stage.drone-action {
+  animation: drone-topdown-shake 0.85s ease-in-out infinite alternate;
+}
+
+@keyframes drone-topdown-shake {
+  0% { transform: scale(1) rotateX(0deg); }
+  50% { transform: scale(1.12) rotateX(20deg) translateY(-10px); }
+  100% { transform: scale(1.06) rotateX(-10deg) translateY(-4px); }
+}
+
+.yut-sticks-row-large {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+/* 윷가락 크기를 큼직하고 과장되게 확대 */
+.yut-stick-giant {
+  width: 42px;
+  height: 165px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  transform-style: preserve-3d;
+}
+
+.yut-stick-giant.spinning-giant {
+  animation: yut-3d-spin-giant 0.45s linear infinite;
+}
+
+@keyframes yut-3d-spin-giant {
+  0% { transform: rotateY(0deg) rotateX(0deg) rotateZ(0deg) scale(1); }
+  50% { transform: rotateY(360deg) rotateX(45deg) rotateZ(15deg) scale(1.35); }
+  100% { transform: rotateY(720deg) rotateX(0deg) rotateZ(0deg) scale(1); }
+}
+
+.yut-stick-giant.belly {
+  background: #fef3c7;
+  border: 4px solid #d97706;
+  color: #92400e;
+}
+
+.yut-stick-giant.back {
+  background: linear-gradient(90deg, #92400e 0%, #b45309 50%, #78350f 100%);
+  border: 4px solid #78350f;
+  color: #fde68a;
+}
+
+.stick-marks-giant {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  height: 85%;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.backdo-tag {
+  font-size: 18px;
+}
+
+.stick-back-pattern-giant {
+  writing-mode: vertical-rl;
+  font-weight: 900;
+  letter-spacing: 6px;
+  opacity: 0.8;
+  font-size: 15px;
+}
+
+.tablet-move-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.move-phase-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 10px 16px;
+  border-radius: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.active-turn-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.current-result-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.mini-move-chip {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 2px solid #cbd5e1;
+  background: #f8fafc;
+  font-weight: 800;
+  font-size: 13px;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.mini-move-chip.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
 
 .board-stage-wrapper {
   position: relative;
   width: 100%;
+  max-width: 580px;
+  margin: 0 auto;
 }
 
 .board-section {
   background: #fef3c7;
   border: 4px solid #b45309;
-  border-radius: 24px;
-  padding: 14px;
-  box-shadow: 0 12px 28px rgba(146, 64, 14, 0.18);
+  border-radius: 20px;
+  padding: 10px;
+  box-shadow: 0 10px 24px rgba(146, 64, 14, 0.16);
 }
 
 .yut-board {
@@ -353,7 +480,7 @@
   width: 100%;
   aspect-ratio: 1 / 1;
   background: radial-gradient(circle, #fffbeb 0%, #fde68a 100%);
-  border-radius: 16px;
+  border-radius: 14px;
 }
 
 .board-lines {
@@ -364,7 +491,6 @@
   pointer-events: none;
 }
 
-/* 둥근 윷칸 (말과 모양이 구분되도록 원형 유지) */
 .board-node {
   position: absolute;
   width: 7.4%;
@@ -396,17 +522,17 @@
 .board-node.preview-target {
   background: #bbf7d0;
   border-color: #16a34a;
-  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.35);
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.35);
   animation: pulse-node 0.9s infinite alternate;
 }
 
 @keyframes pulse-node {
   from { transform: translate(-50%, -50%) scale(1); }
-  to { transform: translate(-50%, -50%) scale(1.16); }
+  to { transform: translate(-50%, -50%) scale(1.15); }
 }
 
 .node-label {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   color: #78350f;
   white-space: nowrap;
@@ -420,11 +546,10 @@
   z-index: 15;
 }
 
-/* 1 & 2. 둥근 사각형 말 + 물리적으로 겹쳐 쌓이는 스택 표현 */
 .physical-stack-group {
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   cursor: default;
 }
 
@@ -435,99 +560,97 @@
 
 @keyframes stack-bounce {
   from { transform: translateY(0) scale(1); }
-  to { transform: translateY(-6px) scale(1.08); }
+  to { transform: translateY(-5px) scale(1.08); }
 }
 
 .yut-piece-rect {
   position: absolute;
   top: 0;
   left: 0;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px; /* 둥근 사각형 */
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   border: 2.5px solid #ffffff;
   color: #ffffff;
   font-weight: 900;
-  font-size: 13px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.35), inset 0 2px 3px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3), inset 0 2px 3px rgba(255, 255, 255, 0.35);
   user-select: none;
 }
 
 .physical-stack-group.selectable .yut-piece-rect {
-  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.9), 0 6px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.9), 0 5px 10px rgba(0, 0, 0, 0.35);
 }
 
-/* 5. 윷판 바로 밑 통합 대기석 */
 .bottom-waiting-dock {
-  margin-top: 12px;
+  margin-top: 10px;
   background: rgba(255, 255, 255, 0.95);
   border: 3px solid #d97706;
-  border-radius: 20px;
-  padding: 12px 14px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
 .dock-header {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   color: #92400e;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   text-align: center;
 }
 
 .dock-players-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 6px;
 }
 
 .dock-player-box {
   background: #f8fafc;
   border: 2px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 8px 10px;
-  transition: all 0.25s;
+  border-radius: 12px;
+  padding: 6px 8px;
 }
 
 .dock-player-box.active-turn {
   background: #fffbeb;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.2);
 }
 
 .dock-player-name {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 12px;
   font-weight: 800;
   color: #0f172a;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .dock-goal-badge {
   margin-left: auto;
   background: #fef3c7;
   color: #b45309;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 8px;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 6px;
 }
 
 .dock-pieces-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 36px;
+  gap: 5px;
+  min-height: 32px;
   flex-wrap: wrap;
 }
 
 .dock-piece {
   position: relative;
   cursor: not-allowed;
-  opacity: 0.85;
+  opacity: 0.8;
   padding: 0;
 }
 
@@ -535,7 +658,7 @@
   cursor: pointer;
   opacity: 1;
   animation: stack-bounce 0.75s infinite alternate;
-  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.9), 0 5px 10px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.9), 0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
 .dock-empty-text {
@@ -544,18 +667,17 @@
   font-weight: 600;
 }
 
-/* 3 & 4. 이동 경로 오버레이 및 잡기 충돌/밀려남 애니메이션 */
 .moving-overlay-piece {
   position: absolute;
-  transform: translate(-50%, -50%) scale(1.22);
+  transform: translate(-50%, -50%) scale(1.2);
   z-index: 60;
   pointer-events: none;
-  transition: left 0.21s linear, top 0.21s linear, transform 0.15s ease-out;
-  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.35));
+  transition: left 0.2s linear, top 0.2s linear;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.35));
 }
 
 .moving-overlay-piece.impact-hit {
-  transform: translate(-50%, -50%) scale(1.42);
+  transform: translate(-50%, -50%) scale(1.38);
 }
 
 .knockback-overlay-piece {
@@ -566,236 +688,14 @@
 }
 
 .knockback-overlay-piece.phase-hit {
-  transition: left 0.22s ease-out, top 0.22s ease-out;
-  transform: translate(-50%, -50%) rotate(28deg) scale(1.15);
+  transition: left 0.2s ease-out, top 0.2s ease-out;
+  transform: translate(-50%, -50%) rotate(25deg) scale(1.1);
 }
 
 .knockback-overlay-piece.phase-return {
-  transition: left 0.45s cubic-bezier(0.22, 1, 0.36, 1), top 0.45s cubic-bezier(0.22, 1, 0.36, 1);
-  transform: translate(-50%, -50%) rotate(360deg) scale(0.95);
+  transition: left 0.4s cubic-bezier(0.22, 1, 0.36, 1), top 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translate(-50%, -50%) rotate(360deg) scale(0.9);
   opacity: 0.9;
-}
-
-/* 오른쪽 컨트롤 패널 */
-.control-section {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.turn-banner,
-.yut-box,
-.moves-box,
-.pieces-box {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 18px;
-  padding: 16px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-}
-
-.yut-drone-stage {
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  border: 2px solid #bfdbfe;
-  border-radius: 16px;
-  padding: 18px 10px;
-  margin-bottom: 14px;
-  perspective: 900px;
-}
-
-.yut-drone-stage.drone-action {
-  animation: drone-topdown-shake 0.85s ease-in-out infinite alternate;
-}
-
-@keyframes drone-topdown-shake {
-  0% { transform: scale(1) rotateX(0deg); }
-  50% { transform: scale(1.08) rotateX(12deg) translateY(-6px); }
-  100% { transform: scale(1.04) rotateX(-6deg) translateY(-2px); }
-}
-
-.yut-sticks-row {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-}
-
-.yut-stick-long {
-  width: 32px;
-  height: 130px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
-  transform-style: preserve-3d;
-}
-
-.yut-stick-long.spinning {
-  animation: yut-3d-spin 0.42s linear infinite;
-}
-
-@keyframes yut-3d-spin {
-  0% { transform: rotateY(0deg) rotateX(0deg) scale(1); }
-  50% { transform: rotateY(180deg) rotateX(25deg) scale(1.22); }
-  100% { transform: rotateY(360deg) rotateX(0deg) scale(1); }
-}
-
-.yut-stick-long.belly {
-  background: #fef3c7;
-  border: 3px solid #d97706;
-  color: #92400e;
-}
-
-.yut-stick-long.back {
-  background: linear-gradient(90deg, #92400e 0%, #b45309 50%, #78350f 100%);
-  border: 3px solid #78350f;
-  color: #fde68a;
-}
-
-.stick-marks-long {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  height: 85%;
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.backdo-tag {
-  font-size: 15px;
-}
-
-.stick-back-pattern-long {
-  writing-mode: vertical-rl;
-  font-weight: 900;
-  letter-spacing: 5px;
-  opacity: 0.75;
-}
-
-.btn-throw {
-  width: 100%;
-  padding: 15px;
-  border-radius: 14px;
-  border: none;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
-}
-
-.btn-throw:disabled {
-  background: #cbd5e1;
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
-.box-title {
-  font-size: 14px;
-  font-weight: 800;
-  color: #334155;
-  margin-bottom: 10px;
-}
-
-.empty-hint {
-  font-size: 13px;
-  color: #94a3b8;
-  text-align: center;
-  padding: 8px 0;
-}
-
-.move-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.move-chip {
-  padding: 8px 14px;
-  border-radius: 12px;
-  border: 2px solid #cbd5e1;
-  background: #f8fafc;
-  font-weight: 800;
-  font-size: 14px;
-  color: #1e293b;
-  cursor: pointer;
-}
-
-.move-chip.selected {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
-}
-
-.move-chip.backdo {
-  border-color: #f59e0b;
-  background: #fffbeb;
-  color: #b45309;
-}
-
-.my-pieces-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-.my-piece-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 2px solid #e2e8f0;
-  background: #f8fafc;
-  text-align: left;
-  cursor: not-allowed;
-  opacity: 0.65;
-  transition: all 0.2s;
-}
-
-.my-piece-btn.ready {
-  opacity: 1;
-  cursor: pointer;
-  background: #ffffff;
-  border-color: #3b82f6;
-  box-shadow: 0 3px 10px rgba(59, 130, 246, 0.15);
-}
-
-.my-piece-btn.ready:hover {
-  transform: translateY(-2px);
-  background: #eff6ff;
-}
-
-.my-piece-btn.finished {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  opacity: 0.7;
-}
-
-.piece-avatar {
-  padding: 6px 10px;
-  border-radius: 8px;
-  color: #ffffff;
-  font-weight: 900;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.piece-status-info {
-  display: flex;
-  flex-direction: column;
-  font-size: 12px;
-  color: #475569;
-}
-
-.piece-status-info strong {
-  font-size: 13px;
-  color: #0f172a;
 }
 
 /* 우승 모달 */

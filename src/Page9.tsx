@@ -26,14 +26,13 @@ interface Player {
 
 interface NodeCoord {
   id: number;
-  x: number; // % 좌표 (board-wrapper 기준)
-  y: number; // % 좌표
+  x: number;
+  y: number;
   isCorner?: boolean;
   isCenter?: boolean;
   label?: string;
 }
 
-// 이동 중인 말 애니메이션 상태
 interface ActiveMoveAnim {
   playerIdx: number;
   pieceIds: number[];
@@ -42,7 +41,6 @@ interface ActiveMoveAnim {
   isImpact?: boolean;
 }
 
-// 잡혀서 대기석으로 밀려가는 말 애니메이션 상태
 interface KnockbackAnim {
   playerIdx: number;
   pieceIds: number[];
@@ -64,7 +62,6 @@ const CONFETTI_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', 
 const PIECE_NAMES = ['첫말', '둘말', '셋말', '넷말'];
 const PIECE_SHORT = ['첫', '둘', '셋', '넷'];
 
-// 윷판 29칸 좌표 (오른쪽 90도 회전: 출발/골인이 우상단 88%, 12%)
 const BOARD_NODES: NodeCoord[] = [
   { id: 0, x: 88, y: 12, isCorner: true, label: '출발/골인' },
   { id: 1, x: 72.8, y: 12 },
@@ -86,7 +83,6 @@ const BOARD_NODES: NodeCoord[] = [
   { id: 17, x: 88, y: 57.6 },
   { id: 18, x: 88, y: 42.4 },
   { id: 19, x: 88, y: 27.2 },
-  // 대각선 및 중앙방
   { id: 20, x: 24.5, y: 24.5 },
   { id: 21, x: 37, y: 37 },
   { id: 22, x: 50, y: 50, isCorner: true, isCenter: true, label: '방' },
@@ -98,7 +94,6 @@ const BOARD_NODES: NodeCoord[] = [
   { id: 28, x: 75.5, y: 24.5 },
 ];
 
-// 플레이어별 하단 대기석 기준 좌표 (board-stage-wrapper 기준 %)
 function getWaitingCoord(playerIdx: number, totalPlayers: number): { x: number; y: number } {
   const cols = Math.min(totalPlayers, 3);
   const col = playerIdx % cols;
@@ -108,7 +103,6 @@ function getWaitingCoord(playerIdx: number, totalPlayers: number): { x: number; 
   return { x, y };
 }
 
-// 노드 ID 또는 특수 상태(-1 대기, 99 골인)의 좌표 반환
 function getPositionCoord(
   pos: number,
   playerIdx: number,
@@ -118,7 +112,6 @@ function getPositionCoord(
     return getWaitingCoord(playerIdx, totalPlayers);
   }
   if (pos === 99) {
-    // 골인 지점(우상단 바깥쪽으로 빠져나가는 좌표)
     return { x: 96, y: 4 };
   }
   const node = BOARD_NODES.find((n) => n.id === pos);
@@ -168,7 +161,6 @@ function getBackdoStep(curr: number, prevPos: number | null): number {
   return curr - 1;
 }
 
-// 이동 경로(거쳐가는 모든 칸 목록) 및 최종 목적지 계산
 function calculateMovePath(
   piece: Piece,
   steps: number
@@ -183,7 +175,6 @@ function calculateMovePath(
   let curr = piece.pos;
   let prev = piece.prevPos;
 
-  // 대기석(-1)에서 출발 시 0번(출발점)을 거쳐 1번으로 진입하는 경로 연출
   if (curr === -1) {
     path.push(0);
   }
@@ -206,6 +197,7 @@ export default function Page9() {
   const [useBackdo, setUseBackdo] = useState<boolean>(true);
 
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState<number>(0);
+  const [turnPhase, setTurnPhase] = useState<'THROW' | 'MOVE'>('THROW');
   const [throwsLeft, setThrowsLeft] = useState<number>(1);
   const [pendingMoves, setPendingMoves] = useState<YutThrow[]>([]);
   const [selectedMoveId, setSelectedMoveId] = useState<number | null>(null);
@@ -219,7 +211,6 @@ export default function Page9() {
     type: 'info' | 'catch' | 'bonus' | 'celebrate';
   } | null>(null);
 
-  // 경로 이동 및 잡기 밀려남 애니메이션 상태
   const [activeMoveAnim, setActiveMoveAnim] = useState<ActiveMoveAnim | null>(null);
   const [knockbackAnim, setKnockbackAnim] = useState<KnockbackAnim | null>(null);
   const isAnimatingRef = useRef(false);
@@ -325,6 +316,7 @@ export default function Page9() {
     }));
     setPlayers(initialized);
     setCurrentPlayerIdx(0);
+    setTurnPhase('THROW');
     setThrowsLeft(1);
     setPendingMoves([]);
     setSelectedMoveId(null);
@@ -333,18 +325,20 @@ export default function Page9() {
     isAnimatingRef.current = false;
     setWinner(null);
     setGameState('PLAYING');
-    showToast(`${initialized[0].name}님 차례입니다! 윷을 던져주세요.`, 'info');
+    showToast(`${initialized[0].name}님 차례! 윷가락을 터치해 던져주세요.`, 'info');
   };
 
   const advanceTurn = (updatedPlayers: Player[]) => {
     const nextIdx = (currentPlayerIdx + 1) % updatedPlayers.length;
     setCurrentPlayerIdx(nextIdx);
+    setTurnPhase('THROW');
     setThrowsLeft(1);
     setPendingMoves([]);
     setSelectedMoveId(null);
     showToast(`👉 다음 차례: ${updatedPlayers[nextIdx].name}님!`, 'info');
   };
 
+  // 윷가락 터치 시 윷 던지기 실행
   const handleThrowYut = () => {
     if (isThrowing || throwsLeft <= 0 || gameState !== 'PLAYING' || isAnimatingRef.current) return;
 
@@ -436,14 +430,17 @@ export default function Page9() {
             showToast('😢 백도가 나왔지만 움직일 말이 없어 턴이 넘어갑니다!', 'info');
             advanceTurn(players);
           }, 1100);
+        } else {
+          window.setTimeout(() => {
+            setTurnPhase('MOVE');
+          }, 600);
         }
       }
-    }, 850);
+    }, 950);
   };
 
-  // 한 칸씩 이동 경로를 따라가는 순차 애니메이션 실행
   const handleSelectPieceToMove = async (pieceId: number) => {
-    if (gameState !== 'PLAYING' || isThrowing || isAnimatingRef.current) return;
+    if (gameState !== 'PLAYING' || isAnimatingRef.current) return;
 
     const currentMove = pendingMoves.find((m) => m.id === selectedMoveId) || pendingMoves[0];
     if (!currentMove) {
@@ -463,7 +460,6 @@ export default function Page9() {
     const startPos = targetPiece.pos;
     const { path, dest, lastPrev } = calculateMovePath(targetPiece, currentMove.steps);
 
-    // 같은 칸에 업힌 내 말들 모두 함께 이동
     const movingPieceIds =
       startPos >= 0
         ? currentPlayer.pieces.filter((p) => p.pos === startPos).map((p) => p.id)
@@ -471,7 +467,6 @@ export default function Page9() {
 
     isAnimatingRef.current = true;
 
-    // 1단계: 시작 좌표에 애니메이션 말 배치
     const startCoord = getPositionCoord(startPos, currentPlayerIdx, players.length);
     setActiveMoveAnim({
       playerIdx: currentPlayerIdx,
@@ -482,7 +477,6 @@ export default function Page9() {
 
     await new Promise((r) => setTimeout(r, 60));
 
-    // 2단계: 이동 경로(path)의 각 칸을 하나씩 차례대로 이동
     for (let i = 0; i < path.length; i++) {
       const stepNode = path[i];
       const coord = getPositionCoord(stepNode, currentPlayerIdx, players.length);
@@ -493,10 +487,9 @@ export default function Page9() {
         x: coord.x,
         y: coord.y,
       });
-      await new Promise((r) => setTimeout(r, 230));
+      await new Promise((r) => setTimeout(r, 220));
     }
 
-    // 3단계: 도착 칸에 상대 말이 있는지 확인 후 '툭 치고 밀려나는' 충돌 애니메이션 연출
     let caughtOpponent = false;
     let caughtPlayerIdx = -1;
     let caughtPieceIds: number[] = [];
@@ -518,7 +511,6 @@ export default function Page9() {
       const destCoord = getPositionCoord(dest, currentPlayerIdx, players.length);
       const waitCoord = getWaitingCoord(caughtPlayerIdx, players.length);
 
-      // 공격 말이 툭 부딪히는 모션
       playSound('catch');
       setActiveMoveAnim({
         playerIdx: currentPlayerIdx,
@@ -528,7 +520,6 @@ export default function Page9() {
         isImpact: true,
       });
 
-      // 상대 말이 옆으로 튕겼다가 하단 대기석으로 쭉 밀려 복귀
       setKnockbackAnim({
         playerIdx: caughtPlayerIdx,
         pieceIds: caughtPieceIds,
@@ -537,7 +528,7 @@ export default function Page9() {
         phase: 'HIT',
       });
 
-      await new Promise((r) => setTimeout(r, 240));
+      await new Promise((r) => setTimeout(r, 220));
 
       setKnockbackAnim({
         playerIdx: caughtPlayerIdx,
@@ -547,11 +538,10 @@ export default function Page9() {
         phase: 'RETURN',
       });
 
-      await new Promise((r) => setTimeout(r, 460));
+      await new Promise((r) => setTimeout(r, 420));
       setKnockbackAnim(null);
     }
 
-    // 4단계: 실제 게임 데이터 확정 반영
     const scoredGoal = dest === 99;
     const updatedPlayers = players.map((player, pIdx) => {
       if (pIdx === currentPlayerIdx) {
@@ -597,10 +587,13 @@ export default function Page9() {
 
     if (caughtOpponent) {
       speakKorean('상대 말을 잡았습니다! 대단해요!');
-      showToast('💥 상대 말을 툭 쳐서 잡았습니다! 🌟❤️ 보너스 턴!', 'catch');
+      showToast('💥 상대 말을 잡았습니다! 🌟❤️ 보너스 턴!', 'catch');
+      if (nextThrowsLeft > 0) {
+        setTurnPhase('THROW');
+      }
     } else if (scoredGoal) {
       playSound('goal');
-      speakKorean('말이 완주했습니다! 최고예요!');
+      speakKorean('말이 완주했습니다!');
       showToast(`🎉 ${PIECE_NAMES[targetPiece.id]} 완주 성공! 💖✨`, 'celebrate');
     } else {
       showToast(`✨ 이동 완료!`, 'celebrate');
@@ -645,6 +638,7 @@ export default function Page9() {
       if (
         e.code === 'Space' &&
         gameState === 'PLAYING' &&
+        turnPhase === 'THROW' &&
         throwsLeft > 0 &&
         !isThrowing &&
         !isAnimatingRef.current
@@ -657,17 +651,15 @@ export default function Page9() {
     return () => window.removeEventListener('keydown', onKeyDown);
   });
 
-  // 물리적으로 겹쳐 보이는 둥근 사각형 말 스택 렌더러
   const renderPhysicalPieceStack = (
     player: Player,
     pieceIds: number[],
     selectable: boolean,
-    onClick?: () => void,
-    extraClass = ''
+    onClick?: () => void
   ) => {
     return (
       <div
-        className={`physical-stack-group ${selectable ? 'selectable' : ''} ${extraClass}`}
+        className={`physical-stack-group ${selectable ? 'selectable' : ''}`}
         onClick={selectable ? onClick : undefined}
         title={`${player.name}의 ${pieceIds.map((id) => PIECE_NAMES[id]).join(', ')}`}
       >
@@ -677,7 +669,7 @@ export default function Page9() {
             className="yut-piece-rect"
             style={{
               backgroundColor: player.color,
-              transform: `translate(${idx * 5}px, ${-idx * 5}px)`,
+              transform: `translate(${idx * 4}px, ${-idx * 4}px)`,
               zIndex: idx + 1,
             }}
           >
@@ -864,9 +856,100 @@ export default function Page9() {
             </button>
           </div>
 
-          <div className="main-stage">
-            {/* 왼쪽: 윷판 + 윷판 바로 밑 전체 참가자 대기석 */}
-            <div className="board-column">
+          {/* 1. 윷 던지기 전용 화면 (THROW 단계 - 윷가락 터치 방식) */}
+          {turnPhase === 'THROW' && (
+            <div className="fullscreen-throw-card">
+              <div
+                className="turn-banner"
+                style={{ borderLeft: `6px solid ${currentPlayer.color}`, width: '100%', maxWidth: '460px' }}
+              >
+                <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 700 }}>현재 차례</div>
+                <div style={{ fontSize: '24px', fontWeight: 900, color: '#0f172a' }}>
+                  {currentPlayer.name}님 (윷 던지기)
+                </div>
+              </div>
+
+              {/* 윷가락을 직접 터치하여 던지도록 유도하는 박스 */}
+              <div
+                className={`yut-touch-stage ${isThrowing ? 'drone-action' : ''}`}
+                onClick={handleThrowYut}
+                title="윷가락을 터치해 던지세요!"
+              >
+                <div className="touch-guide-text">
+                  {isThrowing ? '🎲 윷이 과장되게 회전하며 날아갑니다!' : '👆 윷가락을 터치하여 던지세요!'}
+                </div>
+
+                <div className="yut-sticks-row-large">
+                  {lastSticks.map((isBelly, idx) => (
+                    <div
+                      key={idx}
+                      className={`yut-stick-giant ${isBelly ? 'belly' : 'back'} ${
+                        isThrowing ? 'spinning-giant' : ''
+                      }`}
+                    >
+                      {isBelly ? (
+                        <div className="stick-marks-giant">
+                          <span>✕</span>
+                          <span>✕</span>
+                          {idx === 0 && useBackdo && <span className="backdo-tag">🔙</span>}
+                          <span>✕</span>
+                        </div>
+                      ) : (
+                        <div className="stick-back-pattern-giant">|||||</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {pendingMoves.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ marginTop: '16px', maxWidth: '460px', width: '100%' }}
+                  onClick={() => setTurnPhase('MOVE')}
+                >
+                  👉 윷판에서 말 이동하기 ({pendingMoves.length}개 결과 대기 중)
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* 2. 윷판 및 말 이동 전용 화면 (MOVE 단계) */}
+          {turnPhase === 'MOVE' && (
+            <div className="tablet-move-stage">
+              <div className="move-phase-topbar">
+                <div className="active-turn-indicator">
+                  <span className="color-dot" style={{ backgroundColor: currentPlayer.color }} />
+                  <strong>{currentPlayer.name}님 차례</strong>
+                </div>
+
+                <div className="current-result-badge">
+                  <span>🎯 남은 결과:</span>
+                  {pendingMoves.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`mini-move-chip ${activeMove?.id === m.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedMoveId(m.id)}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+
+                {throwsLeft > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: '13px' }}
+                    onClick={() => setTurnPhase('THROW')}
+                  >
+                    🎲 윷 한번 더 던지기 ({throwsLeft})
+                  </button>
+                )}
+              </div>
+
               <div className="board-stage-wrapper">
                 <div className="board-section">
                   <div className="yut-board">
@@ -884,7 +967,6 @@ export default function Page9() {
                       <line x1="88" y1="12" x2="12" y2="88" stroke="#b45309" strokeWidth="0.8" />
                     </svg>
 
-                    {/* 29개 둥근 윷칸 */}
                     {BOARD_NODES.map((node) => {
                       const isPreview = previewDestinations.has(node.id);
                       return (
@@ -900,14 +982,12 @@ export default function Page9() {
                       );
                     })}
 
-                    {/* 보드 위에 정지해 있는 말들 (둥근 사각형 + 물리적 겹침) */}
                     {BOARD_NODES.map((node) => {
                       const stacksOnNode = players
                         .map((player, pIdx) => ({
                           player,
                           pIdx,
                           pieces: player.pieces.filter((pc) => {
-                            // 현재 이동 애니메이션 중인 말은 중복 표시 방지
                             if (
                               activeMoveAnim &&
                               activeMoveAnim.playerIdx === pIdx &&
@@ -947,9 +1027,8 @@ export default function Page9() {
                   </div>
                 </div>
 
-                {/* 5. 윷판 바로 밑 전체 참가자 통합 대기석 */}
                 <div className="bottom-waiting-dock">
-                  <div className="dock-header">🏠 참가자 대기석 (말을 터치하여 출발!)</div>
+                  <div className="dock-header">🏠 대기석 (대기 중인 말을 터치하면 윷판으로 출발합니다)</div>
                   <div className="dock-players-grid">
                     {players.map((player, pIdx) => {
                       const isMyTurn = pIdx === currentPlayerIdx;
@@ -1026,7 +1105,6 @@ export default function Page9() {
                   </div>
                 </div>
 
-                {/* 3 & 4. 경로를 따라 쭉 이동하는 오버레이 말 & 잡혀서 밀려나는 오버레이 말 */}
                 {activeMoveAnim && (
                   <div
                     className={`moving-overlay-piece ${
@@ -1064,138 +1142,7 @@ export default function Page9() {
                 )}
               </div>
             </div>
-
-            {/* 오른쪽: 컨트롤 패널 */}
-            <div className="control-section">
-              <div
-                className="turn-banner"
-                style={{ borderLeft: `6px solid ${currentPlayer.color}` }}
-              >
-                <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 700 }}>
-                  현재 공격 차례
-                </div>
-                <div style={{ fontSize: '22px', fontWeight: 900, color: '#0f172a' }}>
-                  {currentPlayer.name}님
-                </div>
-              </div>
-
-              <div className="yut-box">
-                <div className={`yut-drone-stage ${isThrowing ? 'drone-action' : ''}`}>
-                  <div className="yut-sticks-row">
-                    {lastSticks.map((isBelly, idx) => (
-                      <div
-                        key={idx}
-                        className={`yut-stick-long ${isBelly ? 'belly' : 'back'} ${
-                          isThrowing ? 'spinning' : ''
-                        }`}
-                      >
-                        {isBelly ? (
-                          <div className="stick-marks-long">
-                            <span>✕</span>
-                            <span>✕</span>
-                            {idx === 0 && useBackdo && <span className="backdo-tag">🔙</span>}
-                            <span>✕</span>
-                          </div>
-                        ) : (
-                          <div className="stick-back-pattern-long">|||||</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn-throw"
-                  disabled={throwsLeft <= 0 || isThrowing || Boolean(activeMoveAnim)}
-                  onClick={handleThrowYut}
-                >
-                  {isThrowing
-                    ? '🎲 윷 공중 회전 중...'
-                    : throwsLeft > 0
-                    ? `🎲 윷 던지기 (남은 기회: ${throwsLeft}회)`
-                    : '👇 이동할 말을 터치하세요'}
-                </button>
-              </div>
-
-              <div className="moves-box">
-                <div className="box-title">📋 이동할 윷 결과 ({pendingMoves.length}개)</div>
-                {pendingMoves.length === 0 ? (
-                  <div className="empty-hint">윷을 던지면 이동 칸수가 여기에 표시됩니다.</div>
-                ) : (
-                  <div className="move-chips">
-                    {pendingMoves.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        className={`move-chip ${activeMove?.id === m.id ? 'selected' : ''} ${
-                          m.steps === -1 ? 'backdo' : ''
-                        }`}
-                        onClick={() => setSelectedMoveId(m.id)}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="pieces-box">
-                <div className="box-title">
-                  ♟️ {currentPlayer.name}님의 말 상태 (버튼으로도 선택 가능)
-                </div>
-                <div className="my-pieces-grid">
-                  {currentPlayer.pieces.map((pc) => {
-                    const isWaiting = pc.pos === -1;
-                    const isFinished = pc.pos === 99;
-                    const isDisabled =
-                      !activeMove ||
-                      isFinished ||
-                      Boolean(activeMoveAnim) ||
-                      (activeMove.steps === -1 && isWaiting);
-
-                    const stackedCount =
-                      pc.pos >= 0 && pc.pos < 99
-                        ? currentPlayer.pieces.filter((other) => other.pos === pc.pos).length
-                        : 1;
-
-                    return (
-                      <button
-                        key={pc.id}
-                        type="button"
-                        disabled={isDisabled}
-                        className={`my-piece-btn ${!isDisabled ? 'ready' : ''} ${
-                          isFinished ? 'finished' : ''
-                        }`}
-                        onClick={() => handleSelectPieceToMove(pc.id)}
-                      >
-                        <span
-                          className="piece-avatar"
-                          style={{
-                            backgroundColor: isFinished ? '#94a3b8' : currentPlayer.color,
-                          }}
-                        >
-                          {PIECE_NAMES[pc.id]}
-                        </span>
-                        <div className="piece-status-info">
-                          <strong>{PIECE_NAMES[pc.id]}</strong>
-                          <span>
-                            {isFinished
-                              ? '🏆 완주 완료'
-                              : isWaiting
-                              ? '🏠 하단 대기석'
-                              : `📍 ${pc.pos}번 칸${
-                                  stackedCount > 1 ? ` (${stackedCount}개 업힘)` : ''
-                                }`}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
