@@ -84,10 +84,10 @@ const TREASURE_ITEMS: TreasureItem[] = [
 ];
 
 const SHIFT_CHEERS = [
-  '오케이! 길이 멋지게 열렸어요!',
-  '좋아! 완벽한 길 밀기예요!',
-  '원더풀! 미로가 연결되었어요!',
-  '나이스! 아주 좋은 선택이에요!',
+  '와! 길이 완전 열렸어요!',
+  '오케이! 탁원한 선택이에요!',
+  '조아! 길이 보이기 시작해요!',
+  '나이스! 진짜 잘해요!',
 ];
 
 const MOVE_CHEERS = [
@@ -104,7 +104,6 @@ const START_CORNERS = [
   { row: 6, col: 0, rotation: 0 },
 ];
 
-// 이름 첫 두 글자 추출 헬퍼
 function getShortName(name: string): string {
   const trimmed = name.trim();
   return trimmed ? trimmed.slice(0, 2) : '?';
@@ -269,7 +268,7 @@ export default function Page10() {
   const [players, setPlayers] = useState<LabyrinthPlayer[]>([
     {
       id: 1,
-      name: '탐험1',
+      name: '사랑',
       color: PIECE_COLORS[0],
       row: 0,
       col: 0,
@@ -280,7 +279,7 @@ export default function Page10() {
     },
     {
       id: 2,
-      name: '탐험2',
+      name: '믿음',
       color: PIECE_COLORS[1],
       row: 0,
       col: 6,
@@ -291,7 +290,7 @@ export default function Page10() {
     },
     {
       id: 3,
-      name: '탐험3',
+      name: '인내',
       color: PIECE_COLORS[2],
       row: 6,
       col: 6,
@@ -302,7 +301,7 @@ export default function Page10() {
     },
     {
       id: 4,
-      name: '탐험4',
+      name: '소망',
       color: PIECE_COLORS[3],
       row: 6,
       col: 0,
@@ -324,6 +323,11 @@ export default function Page10() {
   const [lastPushedArrowId, setLastPushedArrowId] = useState<string | null>(null);
   const [shiftingState, setShiftingState] = useState<ShiftingState | null>(null);
   const [winner, setWinner] = useState<LabyrinthPlayer | null>(null);
+
+  // 말을 길게 꾹 눌렀을 때 말들을 투명(10%)하게 만들어 뒷길 확인하는 상태
+  const [isPeekingRoad, setIsPeekingRoad] = useState<boolean>(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const didLongPressRef = useRef<boolean>(false);
 
   const [toast, setToast] = useState<{
     id: number;
@@ -377,6 +381,28 @@ export default function Page10() {
         osc.stop(ctx.currentTime + idx * 0.06 + 0.2);
       });
     } catch {}
+  };
+
+  // 길게 누르기(260ms 이상 홀드) 시작/종료 핸들러
+  const startLongPressPeek = () => {
+    didLongPressRef.current = false;
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+    }
+    longPressTimerRef.current = window.setTimeout(() => {
+      didLongPressRef.current = true;
+      setIsPeekingRoad(true);
+    }, 260);
+  };
+
+  const endLongPressPeek = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (isPeekingRoad) {
+      setIsPeekingRoad(false);
+    }
   };
 
   const addPlayer = () => {
@@ -461,13 +487,14 @@ export default function Page10() {
     setForbiddenArrowId(null);
     setLastPushedArrowId(null);
     setShiftingState(null);
+    setIsPeekingRoad(false);
     setWinner(null);
     isAnimatingRef.current = false;
     setGameState('PLAYING');
 
     const firstTarget = initializedPlayers[0].targetStack[0];
     showToast(
-      `🧭 ${initializedPlayers[0].name}님 차례! 길을 밀어 [${firstTarget.emoji} ${firstTarget.name}] 보물을 찾으세요.`,
+      `🧭 ${initializedPlayers[0].name}님 차례! 붕붕 뜨는 화살표를 눌러 [${firstTarget.emoji} ${firstTarget.name}] 길을 여세요.`,
       'info'
     );
   };
@@ -567,7 +594,7 @@ export default function Page10() {
 
       const cheer = SHIFT_CHEERS[Math.floor(Math.random() * SHIFT_CHEERS.length)];
       speakKorean(cheer);
-      showToast(`✨ ${cheer} 이동할 칸을 선택하세요!`, 'bonus');
+      showToast(`✨ ${cheer} 초록색 길 중 이동할 칸을 터치하세요!`, 'bonus');
     }, 430);
   };
 
@@ -579,7 +606,7 @@ export default function Page10() {
     const nextGoal = nextPlayer.targetStack[0];
     if (nextGoal) {
       showToast(
-        `👉 ${nextPlayer.name}님 차례! 목표 보물: ${nextGoal.emoji} ${nextGoal.name}`,
+        `👉 ${nextPlayer.name}님 차례! 먼저 붕붕 뜨는 화살표로 [${nextGoal.emoji} ${nextGoal.name}] 길을 밀어보세요!`,
         'info'
       );
     } else {
@@ -591,6 +618,12 @@ export default function Page10() {
   };
 
   const handleSelectMoveTarget = async (targetRow: number, targetCol: number) => {
+    // 길게 눌러 길 모양 확인 중이었으면 이동 실행하지 않음
+    if (didLongPressRef.current) {
+      didLongPressRef.current = false;
+      return;
+    }
+
     if (gameState !== 'PLAYING' || turnPhase !== 'MOVE' || isAnimatingRef.current) return;
 
     const currentPlayer = players[currentPlayerIdx];
@@ -934,8 +967,16 @@ export default function Page10() {
     oppositeId: `RIGHT-${idx}`,
   }));
 
+  const isShiftPhase = turnPhase === 'SHIFT' && !shiftingState;
+  const isMovePhase = turnPhase === 'MOVE' && !shiftingState;
+
   return (
-    <div className="lab-container" style={{ background: currentBackground }}>
+    <div
+      className="lab-container"
+      style={{ background: currentBackground }}
+      onPointerUp={endLongPressPeek}
+      onPointerCancel={endLongPressPeek}
+    >
       {toast && gameState === 'PLAYING' && (
         <div key={toast.id} className={`lab-toast ${toast.type}`}>
           {toast.text}
@@ -1004,11 +1045,11 @@ export default function Page10() {
           </div>
 
           <div className="rule-summary-box">
-            <strong>📜 보물찾기 규칙:</strong>
+            <strong>📜 보물찾기 길잡이:</strong>
             <ul>
-              <li>1단계(길 밀기): 여분 길 카드를 회전한 뒤 화살표(▼▲▶◀)로 미로를 쭉 밀어냅니다.</li>
-              <li>2단계(이동): 초록색으로 연결된 길을 따라 목표 보물 칸으로 이동합니다.</li>
-              <li>모든 보물을 모은 뒤 자신의 시작 모서리(🏠)로 가장 먼저 돌아오면 우승!</li>
+              <li>1단계(길 밀기): 붕붕 뜨는 여분 길카드를 회전하고, 붕붕 뜨는 화살표를 눌러 길을 밉니다.</li>
+              <li>2단계(이동): 붕붕 뜨는 내 말을 확인하고 초록색으로 열린 길을 터치해 이동합니다.</li>
+              <li>💡 팁: 말을 길게 꾹 누르면 말이 투명해져 뒤에 숨은 길 모양을 볼 수 있어요!</li>
             </ul>
           </div>
 
@@ -1127,7 +1168,11 @@ export default function Page10() {
 
           {/* 상단: 고대 미로 보드판 */}
           <div className="maze-board-outer">
-            <div className="maze-ancient-crest">⚜️ AMAZING LABYRINTH ⚜️</div>
+            <div className="maze-ancient-crest">
+              {isPeekingRoad
+                ? '👁️ 뒷길 투시 중 (손을 떼면 말이 다시 보입니다)'
+                : '⚜️ AMAZING LABYRINTH · 말을 꾹 누르면 뒷길 확인 ⚜️'}
+            </div>
 
             {/* 상단 화살표 행 */}
             <div className="arrow-row-horizontal">
@@ -1143,8 +1188,8 @@ export default function Page10() {
                     type="button"
                     disabled={disabled}
                     className={`push-arrow-btn ${
-                      lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                    }`}
+                      !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                    } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
                     onClick={() => handlePushTile(arrow)}
                     title={`${c + 1}열 아래로 밀기`}
                   >
@@ -1169,8 +1214,8 @@ export default function Page10() {
                       type="button"
                       disabled={disabled}
                       className={`push-arrow-btn ${
-                        lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                      }`}
+                        !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                      } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
                       onClick={() => handlePushTile(arrow)}
                       title={`${r + 1}행 오른쪽으로 밀기`}
                     >
@@ -1191,6 +1236,11 @@ export default function Page10() {
                       currentPlayer.row === r && currentPlayer.col === c;
                     const piecesHere = players.filter((p) => p.row === r && p.col === c);
 
+                    // 같은 칸에 여러 말이 있을 때: 현재 차례 말은 보통 크기(상단), 다른 말은 작게(하단 좌/중/우) 분리
+                    const activePieceHere = piecesHere.find((p) => p.id === currentPlayer.id);
+                    const otherPiecesHere = piecesHere.filter((p) => p.id !== currentPlayer.id);
+                    const hasMultiplePieces = piecesHere.length > 1;
+
                     const shiftStyle = getCellShiftStyle(r, c);
                     const enteringStyle = getEnteringTileStyle(r, c);
 
@@ -1200,6 +1250,16 @@ export default function Page10() {
                         className={`maze-cell-slot ${
                           isReachable ? 'reachable-cell' : ''
                         } ${isCurrentPos ? 'current-player-cell' : ''}`}
+                        onPointerDown={() => {
+                          if (piecesHere.length > 0) {
+                            startLongPressPeek();
+                          }
+                        }}
+                        onPointerUp={endLongPressPeek}
+                        onPointerLeave={endLongPressPeek}
+                        onContextMenu={(e) => {
+                          if (piecesHere.length > 0) e.preventDefault();
+                        }}
                         onClick={() => {
                           if (turnPhase === 'MOVE' && !shiftingState) {
                             handleSelectMoveTarget(r, c);
@@ -1210,24 +1270,47 @@ export default function Page10() {
                           {renderTileGraphic(tile)}
 
                           {piecesHere.length > 0 && (
-                            <div className="cell-pieces-cluster">
-                              {piecesHere.map((p, pIdx) => (
+                            <div
+                              className={`cell-pieces-cluster ${
+                                hasMultiplePieces ? 'multi-pieces' : 'single-piece'
+                              } ${isPeekingRoad ? 'peeking-transparent' : ''}`}
+                            >
+                              {/* 현재 차례 플레이어 말 (보통 크기 유지, 이동 단계에서 붕붕 띄움) */}
+                              {activePieceHere && (
                                 <div
-                                  key={p.id}
-                                  className={`explorer-squircle-pawn ${
-                                    p.id === currentPlayer.id ? 'active-pawn' : ''
-                                  }`}
-                                  style={{
-                                    backgroundColor: p.color,
-                                    transform: `translate(${(pIdx % 2) * 7 - 3.5}px, ${
-                                      Math.floor(pIdx / 2) * 7 - 3.5
-                                    }px)`,
-                                  }}
-                                  title={p.name}
+                                  className={`explorer-squircle-pawn active-turn-pawn ${
+                                    hasMultiplePieces ? 'stacked-main' : ''
+                                  } ${isMovePhase ? 'guide-float-pawn' : ''}`}
+                                  style={{ backgroundColor: activePieceHere.color }}
+                                  title={`${activePieceHere.name} (길게 눌러 뒷길 확인)`}
                                 >
-                                  <span className="pawn-name-tag">{getShortName(p.name)}</span>
+                                  <span className="pawn-name-tag">
+                                    {getShortName(activePieceHere.name)}
+                                  </span>
                                 </div>
-                              ))}
+                              )}
+
+                              {/* 다른 플레이어 말들 (겹치지 않게 작게 만들어 옆과 밑에 나란히 배치) */}
+                              {otherPiecesHere.length > 0 && (
+                                <div
+                                  className={`other-pawns-dock ${
+                                    activePieceHere ? 'with-active-above' : 'without-active'
+                                  }`}
+                                >
+                                  {otherPiecesHere.map((p) => (
+                                    <div
+                                      key={p.id}
+                                      className="explorer-squircle-pawn mini-other-pawn"
+                                      style={{ backgroundColor: p.color }}
+                                      title={`${p.name} (길게 눌러 뒷길 확인)`}
+                                    >
+                                      <span className="pawn-name-tag mini">
+                                        {getShortName(p.name)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1255,8 +1338,8 @@ export default function Page10() {
                       type="button"
                       disabled={disabled}
                       className={`push-arrow-btn ${
-                        lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                      }`}
+                        !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                      } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
                       onClick={() => handlePushTile(arrow)}
                       title={`${r + 1}행 왼쪽으로 밀기`}
                     >
@@ -1281,8 +1364,8 @@ export default function Page10() {
                     type="button"
                     disabled={disabled}
                     className={`push-arrow-btn ${
-                      lastPushedArrowId === arrow.id ? 'last-pushed' : ''
-                    }`}
+                      !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                    } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
                     onClick={() => handlePushTile(arrow)}
                     title={`${c + 1}열 위로 밀기`}
                   >
@@ -1294,16 +1377,24 @@ export default function Page10() {
             </div>
           </div>
 
-          {/* 하단 도크: 좌측(작은 여분 카드 돌리기) + 우측(목표 보물 및 기타 정보) */}
+          {/* 하단 도크: 좌측(밀 타이밍에 붕붕 뜨는 여분 길카드) + 우측(목표 보물 및 진행 정보) */}
           <div
             className="bottom-compact-dock"
             style={{ borderTop: `4px solid ${currentPlayer.color}` }}
           >
-            <div className="dock-left-rotate-card">
-              <div className="dock-sub-label">🧩 여분 길카드</div>
+            <div
+              className={`dock-left-rotate-card ${
+                isShiftPhase ? 'guide-float-spare-box' : ''
+              }`}
+            >
+              <div className="dock-sub-label">
+                {isShiftPhase ? '👆 여분 길카드' : '🧩 여분 길카드'}
+              </div>
               <div className="dock-rotate-body">
                 <div
-                  className="mini-spare-tile-box"
+                  className={`mini-spare-tile-box ${
+                    isShiftPhase ? 'guide-float-tile' : ''
+                  }`}
                   onClick={() => rotateSpareTile(1)}
                   title="터치하여 회전"
                 >
@@ -1339,7 +1430,9 @@ export default function Page10() {
                   {currentPlayer.name} ({getShortName(currentPlayer.name)})
                 </span>
                 <span className="step-status-badge">
-                  {turnPhase === 'SHIFT' ? '1단계: 화살표로 길 밀기' : '2단계: 초록 길 터치 이동'}
+                  {turnPhase === 'SHIFT'
+                    ? '1단계: 붕붕 뜨는 화살표로 길 밀기'
+                    : '2단계: 초록 길 터치 이동 (말 꾹 누르면 뒷길 투시)'}
                 </span>
               </div>
 
