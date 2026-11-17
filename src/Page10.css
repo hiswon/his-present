@@ -456,18 +456,22 @@
 
 .maze-cell-slot.reachable-cell {
   cursor: pointer;
-  box-shadow: 0 0 0 2.5px #22c55e;
-  z-index: 6;
+  outline: 3px solid #22c55e;
+  outline-offset: -3px;
+  z-index: 20 !important;
 }
 
 .maze-cell-slot.reachable-cell::after {
   content: '';
   position: absolute;
-  inset: 0;
-  background: rgba(34, 197, 94, 0.28);
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(34, 197, 94, 0.45);
   border-radius: 6px;
   pointer-events: none;
-  animation: path-pulse 0.85s infinite alternate;
+  z-index: 15;
 }
 
 @keyframes path-pulse {

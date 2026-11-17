@@ -336,6 +336,8 @@ export default function Page10() {
   } | null>(null);
 
   const isAnimatingRef = useRef(false);
+// 👇 이 줄을 추가하세요 (AudioContext를 한 번만 저장해 두는 공간)
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const showToast = (
     text: string,
@@ -360,7 +362,19 @@ export default function Page10() {
       const AudioCtx =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
+
+      // 1. 아직 생성된 AudioContext가 없을 때만 최초 1회 생성
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx();
+      }
+
+      const ctx = audioCtxRef.current;
+
+      // 2. 모바일/태블릿 크롬에서 절전(suspended) 상태가 되어 있으면 다시 깨우기
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
       const notesMap: Record<typeof kind, number[]> = {
         rotate: [440],
         shift: [261.63, 329.63, 392.0],
@@ -368,6 +382,7 @@ export default function Page10() {
         treasure: [523.25, 659.25, 783.99, 1046.5],
         win: [523.25, 659.25, 783.99, 1046.5, 1318.5],
       };
+
       notesMap[kind].forEach((freq, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -986,7 +1001,7 @@ export default function Page10() {
       {/* 1. 게임 설정 화면 */}
       {gameState === 'SETUP' && (
         <div className="setup-card">
-          <h1 className="setup-title">🏰 어메이징 라비린스 (보물찾기)</h1>
+          <h1 className="setup-title">🏰어메이징 라비린스(보물을 찾아라)</h1>
 
           <div className="setting-section">
             <label className="setting-label">💎 1인당 찾을 보물 개수</label>
