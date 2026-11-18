@@ -78,7 +78,7 @@ interface NetRoomData {
   levelWinnerId: string | null;
   lastActionNotice: string;
   consecutiveTimeouts: number;
-  waitingSince?: number;
+  waitingSince?: number | null; // 👈 null 허용으로 수정
 }
 
 interface HallOfFameRecord {
@@ -333,7 +333,7 @@ function createDefaultRoom(roomId: number): NetRoomData {
     levelWinnerId: null,
     lastActionNotice: '',
     consecutiveTimeouts: 0,
-    waitingSince: undefined,
+    waitingSince: null, // 👈 undefined -> null 로 수정
   };
 }
 
@@ -708,7 +708,7 @@ export default function Page10() {
       levelWinnerId: null,
       lastActionNotice: `🚀 레벨 ${targetLevel} 시작! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`,
       consecutiveTimeouts: 0,
-      waitingSince: undefined,
+      waitingSince: null, // 👈 undefined -> null 로 수정
     });
   };
 
@@ -800,7 +800,7 @@ export default function Page10() {
         room.levelWinnerId = null;
         room.turnDeadline = null;
         room.consecutiveTimeouts = 0;
-        room.waitingSince = soloRetained.length > 0 ? Date.now() : undefined;
+        room.waitingSince = soloRetained.length > 0 ? Date.now() : null;
         return room;
       }
 
@@ -840,7 +840,7 @@ export default function Page10() {
       room.levelWinnerId = null;
       room.lastActionNotice = `🔥 레벨 ${nextLevel} 돌입! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`;
       room.consecutiveTimeouts = 0;
-      room.waitingSince = undefined;
+      room.waitingSince = null; // 👈 undefined -> null 로 수정
       
       return room;
     });
@@ -896,7 +896,7 @@ export default function Page10() {
       room.currentPlayerIdx = adjustedIdx;
       if (filteredPlayers.length === 0) {
         room.status = 'EMPTY';
-        room.waitingSince = undefined;
+        room.waitingSince = null; // 👈 undefined -> null 로 수정
       }
       return room;
     });
