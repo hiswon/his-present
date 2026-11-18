@@ -10,7 +10,6 @@ import {
 import { db } from './firebase';
 import './Page10.css';
 
-// 방향: [상(Top), 우(Right), 하(Bottom), 좌(Left)]
 type Directions = [boolean, boolean, boolean, boolean];
 type TileShape = 'I' | 'L' | 'T';
 
@@ -40,6 +39,7 @@ interface LabyrinthPlayer {
   startCol: number;
   targetStack: TreasureItem[];
   collected: TreasureItem[];
+  turnsTaken?: number;
 }
 
 interface WaitlistPlayer {
@@ -77,6 +77,14 @@ interface NetRoomData {
   turnDeadline: number | null;
   levelWinnerId: string | null;
   lastActionNotice: string;
+  consecutiveTimeouts: number;
+}
+
+interface HallOfFameRecord {
+  id: string;
+  name: string;
+  scoreOrLevel: string;
+  date: string;
 }
 
 const PLAYER_BG_COLORS = [
@@ -323,6 +331,7 @@ function createDefaultRoom(roomId: number): NetRoomData {
     turnDeadline: null,
     levelWinnerId: null,
     lastActionNotice: '',
+    consecutiveTimeouts: 0,
   };
 }
 
@@ -335,7 +344,7 @@ function getLevelTimeoutSeconds(baseTimeout: number, level: number): number {
 }
 
 export default function Page10() {
-  const [appMode, setAppMode] = useState<'HOME' | 'SOLO' | 'NET_LOBBY' | 'NET_ROOM'>('HOME');
+  const [appMode, setAppMode] = useState<'HOME' | 'SOLO' | 'NET_LOBBY' | 'NET_ROOM' | 'HALL_OF_FAME'>('HOME');
 
   const [mySessionId] = useState<string>(() => {
     const saved = sessionStorage.getItem('labyrinth_net_uid');
@@ -364,6 +373,7 @@ export default function Page10() {
       startCol: 0,
       targetStack: [],
       collected: [],
+      turnsTaken: 0,
     },
     {
       id: '2',
@@ -375,28 +385,7 @@ export default function Page10() {
       startCol: 6,
       targetStack: [],
       collected: [],
-    },
-    {
-      id: '3',
-      name: '인내',
-      color: PIECE_COLORS[2],
-      row: 6,
-      col: 6,
-      startRow: 6,
-      startCol: 6,
-      targetStack: [],
-      collected: [],
-    },
-    {
-      id: '4',
-      name: '소망',
-      color: PIECE_COLORS[3],
-      row: 6,
-      col: 0,
-      startRow: 6,
-      startCol: 0,
-      targetStack: [],
-      collected: [],
+      turnsTaken: 0,
     },
   ]);
 
@@ -480,6 +469,33 @@ export default function Page10() {
     } catch {}
   };
 
+  // 🏆 명예의 전당 저장 함수 (각각 최대 10명)
+  const saveHallOfFameRecord = (type: 'SOLO' | 'NET', record: { name: string; scoreOrLevel: string }) => {
+    const key = type === 'SOLO' ? 'labyrinth_hof_solo' : 'labyrinth_hof_net';
+    try {
+      const existing: HallOfFameRecord[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const newEntry: HallOfFameRecord = {
+        id: `rec_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        name: record.name,
+        scoreOrLevel: record.scoreOrLevel,
+        date: new Date().toLocaleDateString(),
+      };
+      const updated = [newEntry, ...existing].slice(0, 10); // 최대 10명 유지
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const getHallOfFameRecords = (type: 'SOLO' | 'NET'): HallOfFameRecord[] => {
+    const key = type === 'SOLO' ? 'labyrinth_hof_solo' : 'labyrinth_hof_net';
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch {
+      return [];
+    }
+  };
+
   useEffect(() => {
     if (appMode !== 'NET_LOBBY' && appMode !== 'NET_ROOM') return;
 
@@ -521,6 +537,7 @@ export default function Page10() {
       ? rooms.find((r) => r.roomId === selectedRoomId) || null
       : null;
 
+  // 넷게임 턴 제한시간 및 2회 연속 타임아웃 감지 로직
   useEffect(() => {
     if (appMode !== 'NET_ROOM' || !activeNetRoom || activeNetRoom.status !== 'PLAYING') {
       setRemainingSeconds(0);
@@ -586,6 +603,7 @@ export default function Page10() {
             startCol: corner.col,
             targetStack: [],
             collected: [],
+            turnsTaken: 0,
           };
 
           room.status = 'WAITING';
@@ -649,6 +667,7 @@ export default function Page10() {
         startCol: corner.col,
         targetStack: assignedCards,
         collected: [],
+        turnsTaken: 0,
       };
     });
 
@@ -667,6 +686,7 @@ export default function Page10() {
       turnDeadline: Date.now() + levelTimeout * 1000,
       levelWinnerId: null,
       lastActionNotice: `🚀 레벨 ${targetLevel} 시작! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`,
+      consecutiveTimeouts: 0,
     });
   };
 
@@ -711,6 +731,7 @@ export default function Page10() {
           startCol: 0,
           targetStack: [],
           collected: [],
+          turnsTaken: 0,
         }));
         nextParticipants = [...currentPlayers, ...convertedWaiters];
         remainingWaitlist = [];
@@ -731,6 +752,7 @@ export default function Page10() {
             startCol: 0,
             targetStack: [],
             collected: [],
+            turnsTaken: 0,
           }));
 
         nextParticipants = [...retained, ...promotedWaiters];
@@ -747,6 +769,7 @@ export default function Page10() {
           startCol: START_CORNERS[idx].col,
           targetStack: [],
           collected: [],
+          turnsTaken: 0,
         }));
         room.status = soloRetained.length === 0 ? 'EMPTY' : 'WAITING';
         room.level = nextLevel;
@@ -754,6 +777,7 @@ export default function Page10() {
         room.waitlist = remainingWaitlist;
         room.levelWinnerId = null;
         room.turnDeadline = null;
+        room.consecutiveTimeouts = 0;
         return room;
       }
 
@@ -775,6 +799,7 @@ export default function Page10() {
           startCol: corner.col,
           targetStack: selectedPool.slice(idx * levelCards, (idx + 1) * levelCards),
           collected: [],
+          turnsTaken: 0,
         };
       });
 
@@ -791,6 +816,7 @@ export default function Page10() {
       room.turnDeadline = Date.now() + levelTimeout * 1000;
       room.levelWinnerId = null;
       room.lastActionNotice = `🔥 레벨 ${nextLevel} 돌입! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`;
+      room.consecutiveTimeouts = 0;
       
       return room;
     });
@@ -844,6 +870,7 @@ export default function Page10() {
     setAppMode('NET_LOBBY');
   };
 
+  // ⏰ 턴 시간 초과 처리 및 2회 이상 연속 방치 시 방 비우기
   const handleNetTurnTimeout = async (room: NetRoomData) => {
     const roomRef = ref(db, `labyrinth_rooms/room_${room.roomId}`);
     const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, room.level);
@@ -851,11 +878,23 @@ export default function Page10() {
     const nextIdx = playersArr.length > 0 ? (room.currentPlayerIdx + 1) % playersArr.length : 0;
     const timedOutName = playersArr[room.currentPlayerIdx]?.name || '탐험가';
 
+    const nextTimeouts = (room.consecutiveTimeouts || 0) + 1;
+
+    // 아무도 활동하지 않고 2텀 이상 돌아가면 방을 비움
+    if (nextTimeouts >= 2) {
+      await set(roomRef, createDefaultRoom(room.roomId));
+      showToast('⚠️ 활동이 감지되지 않아 방이 자동으로 비워졌습니다.', 'info');
+      setSelectedRoomId(null);
+      setAppMode('NET_LOBBY');
+      return;
+    }
+
     await update(roomRef, {
       currentPlayerIdx: nextIdx,
       turnPhase: 'SHIFT',
       turnDeadline: Date.now() + levelTimeout * 1000,
-      lastActionNotice: `⏰ ${timedOutName}님 시간 초과! 다음 차례로 넘어갑니다.`,
+      lastActionNotice: `⏰ ${timedOutName}님 시간 초과! (${nextTimeouts}/2텀 방치)`,
+      consecutiveTimeouts: nextTimeouts,
     });
   };
 
@@ -937,6 +976,7 @@ export default function Page10() {
       lastPushedArrowId: arrow.id,
       turnPhase: 'MOVE',
       lastActionNotice: `✨ ${currP.name}님이 미로를 밀었습니다! 이동할 칸을 선택하세요.`,
+      consecutiveTimeouts: 0, // 활동 감지 시 초기화
     });
   };
 
@@ -974,6 +1014,7 @@ export default function Page10() {
       if (idx !== currIdx) return p;
       const nextStack = [...(p.targetStack || [])];
       const nextCollected = [...(p.collected || [])];
+      const nextTurns = (p.turnsTaken || 0) + 1;
 
       if (
         currentTargetTreasure &&
@@ -995,6 +1036,7 @@ export default function Page10() {
         col: targetCol,
         targetStack: nextStack,
         collected: nextCollected,
+        turnsTaken: nextTurns,
       };
     });
 
@@ -1010,6 +1052,14 @@ export default function Page10() {
 
     if (isLevelWon) {
       playSound('win');
+      speakKorean(`원더풀! 축하합니다! ${currP.name}님이 1등을 달성했습니다!`);
+      
+      // 넷플레이 명예의 전당 저장 (가장 짧은 턴수 기준 정렬 가능하도록 레코드 기록)
+      saveHallOfFameRecord('NET', {
+        name: currP.name,
+        scoreOrLevel: `Lv.${activeNetRoom.level} (총 ${currP.turnsTaken || 1}턴 완료)`,
+      });
+
       await update(roomRef, {
         boardFlat: JSON.stringify(nextBoard),
         players: updatedPlayers,
@@ -1017,12 +1067,17 @@ export default function Page10() {
         levelWinnerId: currP.id,
         turnDeadline: null,
         lastActionNotice: `🏆 ${currP.name}님이 레벨 ${activeNetRoom.level} 1등을 달성했습니다!`,
+        consecutiveTimeouts: 0,
       });
       return;
     }
 
     if (foundTreasure) {
       playSound('treasure');
+      speakKorean(`원더풀! 보물을 찾았어요!`);
+    } else {
+      const moveCheer = MOVE_CHEERS[Math.floor(Math.random() * MOVE_CHEERS.length)];
+      speakKorean(moveCheer);
     }
 
     const levelTimeout = getLevelTimeoutSeconds(activeNetRoom.baseTimeout, activeNetRoom.level);
@@ -1037,6 +1092,7 @@ export default function Page10() {
       lastActionNotice: foundTreasure
         ? `💎 ${currP.name}님이 [${currentTargetTreasure?.name}] 보물을 획득했습니다!`
         : `👉 다음은 ${updatedPlayers[nextIdx].name}님 차례입니다!`,
+      consecutiveTimeouts: 0,
     });
   };
 
@@ -1078,6 +1134,7 @@ export default function Page10() {
         startCol: corner.col,
         targetStack: [],
         collected: [],
+        turnsTaken: 0,
       },
     ]);
     setInputName('');
@@ -1129,6 +1186,7 @@ export default function Page10() {
         startCol: corner.col,
         targetStack: assignedCards,
         collected: [],
+        turnsTaken: 0,
       };
     });
 
@@ -1299,6 +1357,7 @@ export default function Page10() {
 
       const nextStack = [...(p.targetStack || [])];
       const nextCollected = [...(p.collected || [])];
+      const nextTurns = (p.turnsTaken || 0) + 1;
 
       if (
         currentTargetTreasure &&
@@ -1320,6 +1379,7 @@ export default function Page10() {
         col: targetCol,
         targetStack: nextStack,
         collected: nextCollected,
+        turnsTaken: nextTurns,
       };
     });
 
@@ -1342,6 +1402,12 @@ export default function Page10() {
       setGameState('GAME_OVER');
       playSound('win');
       speakKorean(`원더풀! 축하합니다! ${champ.name}님이 모든 보물을 찾고 우승했습니다!`);
+
+      // 단독 게임 명예의 전당 저장 (가장 적은 턴 수로 우승한 사람 기록)
+      saveHallOfFameRecord('SOLO', {
+        name: champ.name,
+        scoreOrLevel: `보물 ${cardsPerPlayer}개 · 총 ${champ.turnsTaken || 1}턴 우승`,
+      });
       return;
     }
 
@@ -1564,6 +1630,79 @@ export default function Page10() {
               <span className="mode-desc">온라인 4개 방 실시간 대전 & 5레벨 도전</span>
             </button>
           </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ marginTop: '14px', width: '100%' }}
+            onClick={() => setAppMode('HALL_OF_FAME')}
+          >
+            🏅 명예의 전당 보기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 🏅 명예의 전당 화면 (단독 / 넷플레이 각각 10명)
+  if (appMode === 'HALL_OF_FAME') {
+    const soloRecords = getHallOfFameRecords('SOLO');
+    const netRecords = getHallOfFameRecords('NET');
+
+    return (
+      <div className="lab-container" style={{ background: PLAYER_BG_COLORS[0], padding: '16px' }}>
+        <div className="setup-card" style={{ maxWidth: '600px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setAppMode('HOME')}
+            >
+              ⬅️ 홈으로
+            </button>
+            <h2 style={{ margin: 0, color: '#0f172a' }}>🏅 명예의 전당</h2>
+            <div style={{ width: '60px' }} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {/* 단독 플레이 명예의 전당 */}
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '15px', color: '#1e3a8a', textAlign: 'center' }}>
+                🎮 단독 플레이 TOP 10
+              </h3>
+              {soloRecords.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#64748b', fontSize: '13px' }}>기록이 없습니다.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {soloRecords.map((rec, i) => (
+                    <div key={rec.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', background: '#fff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                      <span><strong>{i + 1}. {rec.name}</strong></span>
+                      <span style={{ color: '#059669' }}>{rec.scoreOrLevel}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 넷플레이 명예의 전당 */}
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '15px', color: '#b45309', textAlign: 'center' }}>
+                🌐 넷플레이 TOP 10
+              </h3>
+              {netRecords.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#64748b', fontSize: '13px' }}>기록이 없습니다.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {netRecords.map((rec, i) => (
+                    <div key={rec.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', background: '#fff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                      <span><strong>{i + 1}. {rec.name}</strong></span>
+                      <span style={{ color: '#d97706' }}>{rec.scoreOrLevel}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1579,12 +1718,19 @@ export default function Page10() {
               className="btn btn-secondary"
               onClick={() => setAppMode('HOME')}
             >
-              ⬅️ 모드 선택
+              ⬅️ 홈으로
             </button>
             <h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a' }}>
               🌐 넷게임 대기실 (방 4개)
             </h2>
-            <div style={{ width: '84px' }} />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ fontSize: '12px' }}
+              onClick={() => setAppMode('HALL_OF_FAME')}
+            >
+              🏅 명예의전당
+            </button>
           </div>
 
           <div className="net-rooms-grid">
@@ -2008,7 +2154,9 @@ export default function Page10() {
                     rowArr.map((tile, c) => {
                       const cellKey = `${r},${c}`;
                       const isReachable =
-                        activeNetRoom.turnPhase === 'MOVE' && netReachableCells.has(cellKey);
+                        activeNetRoom.status === 'PLAYING' &&
+                        activeNetRoom.turnPhase === 'MOVE' &&
+                        netReachableCells.has(cellKey);
                       const piecesHere = roomPlayers.filter(
                         (p) => p.row === r && p.col === c
                       );
@@ -2292,7 +2440,7 @@ export default function Page10() {
                         {p.name}
                       </span>
                       <span>
-                        {(p.collected || []).length} / {levelCards}개
+                        {(p.collected || []).length} / {levelCards}개 ({p.turnsTaken || 0}턴)
                       </span>
                     </div>
                   );
@@ -2376,17 +2524,25 @@ export default function Page10() {
 
       {gameState === 'SETUP' && (
         <div className="setup-card">
-          <div style={{ marginBottom: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <button
               type="button"
               className="btn btn-secondary"
               style={{ padding: '6px 12px', fontSize: '12px' }}
               onClick={() => setAppMode('HOME')}
             >
-              ⬅️ 단독/넷게임 선택
+              ⬅️ 홈으로
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+              onClick={() => setAppMode('HALL_OF_FAME')}
+            >
+              🏅 명예의 전당
             </button>
           </div>
-          <h1 className="setup-title">🏰어메이징 라비린스(단독게임)</h1>
+          <h1 className="setup-title">🏰 어메이징 라비린스 (단독게임)</h1>
 
           <div className="setting-section">
             <label className="setting-label">💎 1인당 찾을 보물 개수</label>
@@ -2565,8 +2721,9 @@ export default function Page10() {
               type="button"
               className="btn btn-secondary btn-compact-setup"
               onClick={() => setGameState('SETUP')}
+              title="설정/나가기"
             >
-              ⚙️
+              🚪
             </button>
           </div>
 
@@ -2894,7 +3051,7 @@ export default function Page10() {
               {winner.name}님 최종 우승! 🌟
             </h2>
             <p className="modal-subtext">
-              보물 {cardsPerPlayer}개를 모두 찾고 무사히 미로를 탈출했습니다!
+              보물 {cardsPerPlayer}개를 모두 찾고 무사히 미로를 탈출했습니다! (총 {winner.turnsTaken || 0}턴 소요)
             </p>
 
             <div className="rank-list">
@@ -2910,7 +3067,7 @@ export default function Page10() {
                       {p.name}
                     </span>
                     <span>
-                      획득 보물: {(p.collected || []).length} / {cardsPerPlayer}개
+                      획득 보물: {(p.collected || []).length}개 ({p.turnsTaken || 0}턴)
                     </span>
                   </div>
                 );
@@ -2918,6 +3075,13 @@ export default function Page10() {
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAppMode('HALL_OF_FAME')}
+              >
+                🏅 명예의 전당
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary"
