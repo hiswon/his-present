@@ -8,7 +8,7 @@ import {
   runTransaction
 } from 'firebase/database';
 import { db } from './firebase';
-import './DaVinciCode.css';
+import './Page7.css';
 
 type TileColor = 'BLACK' | 'WHITE';
 
@@ -205,7 +205,7 @@ function getLevelTimeoutSeconds(baseTimeout: number, level: number): number {
   return Math.max(15, baseTimeout - (level - 1) * 7);
 }
 
-export default function DaVinciCode() {
+export default function Page7() {
   const [appMode, setAppMode] = useState<'HOME' | 'SOLO' | 'NET_LOBBY' | 'NET_ROOM' | 'HALL_OF_FAME'>('HOME');
 
   const [mySessionId] = useState<string>(() => {
