@@ -7,7 +7,7 @@ import {
   get,
   runTransaction
 } from 'firebase/database';
-import { db } from './firebase'; // 본인의 Realtime Database 설정 파일 경로에 맞게 수정하세요
+import { db } from './firebase';
 import './Page10.css';
 
 // 방향: [상(Top), 우(Right), 하(Bottom), 좌(Left)]
@@ -138,7 +138,7 @@ const START_CORNERS = [
 ];
 
 function getShortName(name: string): string {
-  const trimmed = name.trim();
+  const trimmed = name ? name.trim() : '';
   return trimmed ? trimmed.slice(0, 2) : '?';
 }
 
@@ -177,7 +177,8 @@ function findReachablePaths(
 
   while (queue.length > 0) {
     const curr = queue.shift()!;
-    const currTile = board[curr.r][curr.c];
+    const currTile = board[curr.r]?.[curr.c];
+    if (!currTile) continue;
     const currDirs = getOpenDirections(currTile.shape, currTile.rotation);
     const currPath = paths.get(`${curr.r},${curr.c}`)!;
 
@@ -190,7 +191,8 @@ function findReachablePaths(
       const nextKey = `${nr},${nc}`;
       if (paths.has(nextKey)) continue;
 
-      const nextTile = board[nr][nc];
+      const nextTile = board[nr]?.[nc];
+      if (!nextTile) continue;
       const nextDirs = getOpenDirections(nextTile.shape, nextTile.rotation);
       if (nextDirs[oppIdx]) {
         paths.set(nextKey, [...currPath, { r: nr, c: nc }]);
@@ -401,7 +403,7 @@ export default function Page10() {
   const [inputName, setInputName] = useState('');
   const [cardsPerPlayer, setCardsPerPlayer] = useState<number>(4);
 
-  const [board, setBoard] = useState<BoardTile[][]>([]);
+  const [board, setBoard] = useState<BoardTile[][]>([[]]);
   const [spareTile, setSpareTile] = useState<BoardTile | null>(null);
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState<number>(0);
   const [turnPhase, setTurnPhase] = useState<'SHIFT' | 'MOVE'>('SHIFT');
@@ -498,7 +500,15 @@ export default function Page10() {
       if (!data) return;
 
       const loadedRooms: NetRoomData[] = [1, 2, 3, 4].map((id) => {
-        return data[`room_${id}`] || createDefaultRoom(id);
+        const rData = data[`room_${id}`];
+        const def = createDefaultRoom(id);
+        if (!rData) return def;
+        return {
+          ...def,
+          ...rData,
+          players: rData.players || [],
+          waitlist: rData.waitlist || [],
+        };
       });
       setRooms(loadedRooms);
     });
@@ -523,9 +533,9 @@ export default function Page10() {
       setRemainingSeconds(diff);
 
       if (diff === 0 && timeoutHandledRef.current !== activeNetRoom.turnDeadline) {
-        const currP = activeNetRoom.players[activeNetRoom.currentPlayerIdx];
+        const currP = activeNetRoom.players?.[activeNetRoom.currentPlayerIdx];
         const amIResponsible =
-          currP?.id === mySessionId || activeNetRoom.players[0]?.id === mySessionId;
+          currP?.id === mySessionId || activeNetRoom.players?.[0]?.id === mySessionId;
 
         if (amIResponsible) {
           timeoutHandledRef.current = activeNetRoom.turnDeadline;
@@ -539,7 +549,7 @@ export default function Page10() {
 
   const handleEnterRoomSubmit = async () => {
     if (!joinModalRoom) return;
-    const trimmedName = joinPlayerName.trim();
+    const trimmedName = joinPlayerName ? joinPlayerName.trim() : '';
     if (!trimmedName) {
       alert('참가할 이름을 입력해주세요!');
       return;
@@ -556,8 +566,8 @@ export default function Page10() {
         if (!room.waitlist) room.waitlist = [];
 
         if (
-          room.players.some((p: LabyrinthPlayer) => p.id === mySessionId) ||
-          room.waitlist.some((w: WaitlistPlayer) => w.id === mySessionId)
+          room.players.some((p) => p.id === mySessionId) ||
+          room.waitlist.some((w) => w.id === mySessionId)
         ) {
           joinResultType = 'REJOIN';
           return room;
@@ -662,11 +672,12 @@ export default function Page10() {
 
   const handleStartNetGameFromLobby = async () => {
     if (!activeNetRoom) return;
-    if (activeNetRoom.players.length < 2) {
+    const currentPlayers = activeNetRoom.players || [];
+    if (currentPlayers.length < 2) {
       showToast('최소 2명 이상 모여야 게임을 시작할 수 있습니다!', 'info');
       return;
     }
-    await startNetLevel(activeNetRoom, 1, activeNetRoom.players, activeNetRoom.waitlist);
+    await startNetLevel(activeNetRoom, 1, currentPlayers, activeNetRoom.waitlist || []);
   };
 
   const handleAdvanceToNextLevel = async () => {
@@ -676,6 +687,8 @@ export default function Page10() {
     await runTransaction(roomRef, (roomData) => {
       if (!roomData) return roomData;
       const room = roomData as NetRoomData;
+      if (!room.players) room.players = [];
+      if (!room.waitlist) room.waitlist = [];
 
       const nextLevel = room.level + 1;
       if (nextLevel > 5) {
@@ -793,9 +806,11 @@ export default function Page10() {
     await runTransaction(roomRef, (roomData) => {
       if (!roomData) return roomData;
       const room = roomData as NetRoomData;
+      if (!room.players) room.players = [];
+      if (!room.waitlist) room.waitlist = [];
 
-      const filteredPlayers = (room.players || []).filter((p) => p.id !== mySessionId);
-      const filteredWaitlist = (room.waitlist || []).filter((w) => w.id !== mySessionId);
+      const filteredPlayers = room.players.filter((p) => p.id !== mySessionId);
+      const filteredWaitlist = room.waitlist.filter((w) => w.id !== mySessionId);
 
       if (room.status === 'WAITING' && filteredPlayers.length === 0) {
         return createDefaultRoom(room.roomId);
@@ -832,8 +847,9 @@ export default function Page10() {
   const handleNetTurnTimeout = async (room: NetRoomData) => {
     const roomRef = ref(db, `labyrinth_rooms/room_${room.roomId}`);
     const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, room.level);
-    const nextIdx = (room.currentPlayerIdx + 1) % room.players.length;
-    const timedOutName = room.players[room.currentPlayerIdx]?.name || '탐험가';
+    const playersArr = room.players || [];
+    const nextIdx = playersArr.length > 0 ? (room.currentPlayerIdx + 1) % playersArr.length : 0;
+    const timedOutName = playersArr[room.currentPlayerIdx]?.name || '탐험가';
 
     await update(roomRef, {
       currentPlayerIdx: nextIdx,
@@ -845,8 +861,9 @@ export default function Page10() {
 
   const handleNetRotateSpare = async (delta: number) => {
     if (!activeNetRoom || !activeNetRoom.spareTile || activeNetRoom.turnPhase !== 'SHIFT') return;
-    const currP = activeNetRoom.players[activeNetRoom.currentPlayerIdx];
-    if (currP?.id !== mySessionId) {
+    const playersArr = activeNetRoom.players || [];
+    const currP = playersArr[activeNetRoom.currentPlayerIdx];
+    if (!currP || currP.id !== mySessionId) {
       showToast('지금은 내 차례가 아닙니다!', 'info');
       return;
     }
@@ -863,8 +880,9 @@ export default function Page10() {
 
   const handleNetPushTile = async (arrow: PushArrow) => {
     if (!activeNetRoom || !activeNetRoom.spareTile || activeNetRoom.turnPhase !== 'SHIFT') return;
-    const currP = activeNetRoom.players[activeNetRoom.currentPlayerIdx];
-    if (currP?.id !== mySessionId) {
+    const playersArr = activeNetRoom.players || [];
+    const currP = playersArr[activeNetRoom.currentPlayerIdx];
+    if (!currP || currP.id !== mySessionId) {
       showToast('지금은 내 차례가 아닙니다!', 'info');
       return;
     }
@@ -874,7 +892,7 @@ export default function Page10() {
     }
 
     playSound('shift');
-    const netBoard: BoardTile[][] = JSON.parse(activeNetRoom.boardFlat);
+    const netBoard: BoardTile[][] = JSON.parse(activeNetRoom.boardFlat || '[]');
     const nextBoard = netBoard.map((row) => [...row]);
     const enteringTile = { ...activeNetRoom.spareTile };
     let pushedOutTile: BoardTile;
@@ -901,7 +919,7 @@ export default function Page10() {
       nextBoard[r][6] = enteringTile;
     }
 
-    const updatedPlayers = activeNetRoom.players.map((p) => {
+    const updatedPlayers = playersArr.map((p) => {
       let { row, col } = p;
       if (arrow.dir === 'DOWN' && col === arrow.index) row = row === 6 ? 0 : row + 1;
       else if (arrow.dir === 'UP' && col === arrow.index) row = row === 0 ? 6 : row - 1;
@@ -930,14 +948,15 @@ export default function Page10() {
     if (!activeNetRoom || activeNetRoom.status !== 'PLAYING' || activeNetRoom.turnPhase !== 'MOVE')
       return;
 
+    const playersArr = activeNetRoom.players || [];
     const currIdx = activeNetRoom.currentPlayerIdx;
-    const currP = activeNetRoom.players[currIdx];
-    if (currP?.id !== mySessionId) {
+    const currP = playersArr[currIdx];
+    if (!currP || currP.id !== mySessionId) {
       showToast('지금은 내 차례가 아닙니다!', 'info');
       return;
     }
 
-    const netBoard: BoardTile[][] = JSON.parse(activeNetRoom.boardFlat);
+    const netBoard: BoardTile[][] = JSON.parse(activeNetRoom.boardFlat || '[]');
     const reachableMap = findReachablePaths(netBoard, currP.row, currP.col);
     if (!reachableMap.has(`${targetRow},${targetCol}`)) {
       showToast('🚧 길이 막혀 있어 이동할 수 없는 칸입니다!', 'info');
@@ -945,19 +964,20 @@ export default function Page10() {
     }
 
     playSound('step');
-    const landedTile = netBoard[targetRow][targetCol];
-    const currentTargetTreasure = currP.targetStack[0];
+    const landedTile = netBoard[targetRow]?.[targetCol];
+    const targetStack = currP.targetStack || [];
+    const currentTargetTreasure = targetStack[0];
     let foundTreasure = false;
     let isLevelWon = false;
 
-    const updatedPlayers = activeNetRoom.players.map((p, idx) => {
+    const updatedPlayers = playersArr.map((p, idx) => {
       if (idx !== currIdx) return p;
-      const nextStack = [...p.targetStack];
-      const nextCollected = [...p.collected];
+      const nextStack = [...(p.targetStack || [])];
+      const nextCollected = [...(p.collected || [])];
 
       if (
         currentTargetTreasure &&
-        landedTile.treasure &&
+        landedTile?.treasure &&
         landedTile.treasure.id === currentTargetTreasure.id
       ) {
         foundTreasure = true;
@@ -1038,7 +1058,8 @@ export default function Page10() {
   };
 
   const addPlayer = () => {
-    if (!inputName.trim()) return;
+    const trimmed = inputName ? inputName.trim() : '';
+    if (!trimmed) return;
     if (players.length >= 4) {
       showToast('최대 4명까지 참가할 수 있습니다.', 'info');
       return;
@@ -1049,7 +1070,7 @@ export default function Page10() {
       ...players,
       {
         id: String(Date.now() + Math.random()),
-        name: inputName.trim(),
+        name: trimmed,
         color: PIECE_COLORS[idx % PIECE_COLORS.length],
         row: corner.row,
         col: corner.col,
@@ -1124,11 +1145,13 @@ export default function Page10() {
     isAnimatingRef.current = false;
     setGameState('PLAYING');
 
-    const firstTarget = initializedPlayers[0].targetStack[0];
-    showToast(
-      `🧭 ${initializedPlayers[0].name}님 차례! 붕붕 뜨는 화살표를 눌러 [${firstTarget.emoji} ${firstTarget.name}] 길을 여세요.`,
-      'info'
-    );
+    const firstTarget = initializedPlayers[0]?.targetStack[0];
+    if (firstTarget) {
+      showToast(
+        `🧭 ${initializedPlayers[0].name}님 차례! 붕붕 뜨는 화살표를 눌러 [${firstTarget.emoji} ${firstTarget.name}] 길을 여세요.`,
+        'info'
+      );
+    }
   };
 
   const rotateSpareTile = (delta: number) => {
@@ -1222,7 +1245,7 @@ export default function Page10() {
     setCurrentPlayerIdx(nextIdx);
     setTurnPhase('SHIFT');
     const nextPlayer = nextPlayers[nextIdx];
-    const nextGoal = nextPlayer.targetStack[0];
+    const nextGoal = nextPlayer?.targetStack?.[0];
     if (nextGoal) {
       showToast(
         `👉 ${nextPlayer.name}님 차례! 먼저 붕붕 뜨는 화살표로 [${nextGoal.emoji} ${nextGoal.name}] 길을 밀어보세요!`,
@@ -1265,20 +1288,21 @@ export default function Page10() {
       await new Promise((r) => setTimeout(r, 175));
     }
 
-    const landedTile = board[targetRow][targetCol];
-    const currentTargetTreasure = currentPlayer.targetStack[0];
+    const landedTile = board[targetRow]?.[targetCol];
+    const targetStack = currentPlayer.targetStack || [];
+    const currentTargetTreasure = targetStack[0];
     let foundTreasure = false;
     let isGameWon = false;
 
     const updatedPlayers = players.map((p, idx) => {
       if (idx !== currentPlayerIdx) return p;
 
-      const nextStack = [...p.targetStack];
-      const nextCollected = [...p.collected];
+      const nextStack = [...(p.targetStack || [])];
+      const nextCollected = [...(p.collected || [])];
 
       if (
         currentTargetTreasure &&
-        landedTile.treasure &&
+        landedTile?.treasure &&
         landedTile.treasure.id === currentTargetTreasure.id
       ) {
         foundTreasure = true;
@@ -1323,7 +1347,7 @@ export default function Page10() {
 
     if (foundTreasure && currentTargetTreasure) {
       playSound('treasure');
-      const remainingCount = updatedPlayers[currentPlayerIdx].targetStack.length;
+      const remainingCount = updatedPlayers[currentPlayerIdx]?.targetStack?.length || 0;
       if (remainingCount === 0) {
         speakKorean(`원더풀! ${currentTargetTreasure.name} 획득! 이제 집으로 돌아가세요!`);
         showToast(
@@ -1402,7 +1426,7 @@ export default function Page10() {
     isSpare = false
   ) => {
     const [top, right, bottom, left] = getOpenDirections(tile.shape, tile.rotation);
-    const currentGoal = activePlayer?.targetStack[0];
+    const currentGoal = activePlayer?.targetStack?.[0];
     const isMyCurrentGoal =
       isPlayingNow &&
       tile.treasure &&
@@ -1464,7 +1488,7 @@ export default function Page10() {
 
         {tile.fixed && <span className="fixed-rivet" title="고정 석판" />}
 
-        {tile.startCornerOf !== undefined && activePlayersList[tile.startCornerOf] && (
+        {tile.startCornerOf !== undefined && activePlayersList?.[tile.startCornerOf] && (
           <div
             className="corner-home-badge"
             style={{ backgroundColor: activePlayersList[tile.startCornerOf].color }}
@@ -1514,7 +1538,7 @@ export default function Page10() {
         <div className="setup-card home-entry-card">
           <div className="home-castle-icon">🏰</div>
           <h1 className="setup-title">어메이징 라비린스</h1>
-          <p className="home-subtitle">움직이는 고대 미로 속에서 성경의 보원을 찾아라!</p>
+          <p className="home-subtitle">움직이는 고대 미로 속에서 성경의 보물을 찾아라!</p>
 
           <div className="mode-select-grid">
             <button
@@ -1565,10 +1589,12 @@ export default function Page10() {
 
           <div className="net-rooms-grid">
             {rooms.map((room) => {
-              const isEmpty = room.status === 'EMPTY' || room.players.length === 0;
-              const isWaiting = room.status === 'WAITING' && room.players.length > 0;
+              const roomPlayers = room.players || [];
+              const roomWaitlist = room.waitlist || [];
+              const isEmpty = room.status === 'EMPTY' || roomPlayers.length === 0;
+              const isWaiting = room.status === 'WAITING' && roomPlayers.length > 0;
               const isPlaying = room.status === 'PLAYING' || room.status === 'LEVEL_CLEAR';
-              const isFull = room.players.length >= 4;
+              const isFull = roomPlayers.length >= 4;
 
               let statusBadgeText = '🟢 빈방';
               let statusClass = 'empty';
@@ -1578,7 +1604,7 @@ export default function Page10() {
               } else if (isWaiting) {
                 statusBadgeText = isFull
                   ? `🟠 대기중 (만석 4/4)`
-                  : `🟡 대기중 (${room.players.length}/4명)`;
+                  : `🟡 대기중 (${roomPlayers.length}/4명)`;
                 statusClass = 'waiting';
               }
 
@@ -1588,8 +1614,8 @@ export default function Page10() {
                   className={`net-room-card ${statusClass}`}
                   onClick={() => {
                     if (
-                      room.players.some((p) => p.id === mySessionId) ||
-                      room.waitlist.some((w) => w.id === mySessionId)
+                      roomPlayers.some((p) => p.id === mySessionId) ||
+                      roomWaitlist.some((w) => w.id === mySessionId)
                     ) {
                       setSelectedRoomId(room.roomId);
                       setAppMode('NET_ROOM');
@@ -1610,12 +1636,12 @@ export default function Page10() {
                   </div>
 
                   <div className="room-members-box">
-                    <div className="room-members-label">참가자 ({room.players.length}/4):</div>
+                    <div className="room-members-label">참가자 ({roomPlayers.length}/4):</div>
                     <div className="room-members-chips">
-                      {room.players.length === 0 ? (
+                      {roomPlayers.length === 0 ? (
                         <span className="empty-member-text">첫 번째 탐험가를 기다리고 있습니다</span>
                       ) : (
-                        room.players.map((p, idx) => (
+                        roomPlayers.map((p, idx) => (
                           <span
                             key={p.id}
                             className="member-chip"
@@ -1629,10 +1655,10 @@ export default function Page10() {
                     </div>
                   </div>
 
-                  {room.waitlist.length > 0 && (
+                  {roomWaitlist.length > 0 && (
                     <div className="room-waitlist-box">
-                      ⏳ 다음 레벨 예약 ({room.waitlist.length}명):{' '}
-                      {room.waitlist.map((w) => w.name).join(', ')}
+                      ⏳ 다음 레벨 예약 ({roomWaitlist.length}명):{' '}
+                      {roomWaitlist.map((w) => w.name).join(', ')}
                     </div>
                   )}
 
@@ -1656,7 +1682,7 @@ export default function Page10() {
               <p className="modal-subtext">
                 {joinModalRoom.status === 'PLAYING' ||
                 joinModalRoom.status === 'LEVEL_CLEAR' ||
-                joinModalRoom.players.length >= 4
+                (joinModalRoom.players || []).length >= 4
                   ? '현재 게임 중이거나 인원이 가득 차서 다음 레벨 예약자로 등록됩니다.'
                   : '탐험에 사용할 이름을 입력해주세요.'}
               </p>
@@ -1689,7 +1715,7 @@ export default function Page10() {
                 >
                   {joinModalRoom.status === 'PLAYING' ||
                   joinModalRoom.status === 'LEVEL_CLEAR' ||
-                  joinModalRoom.players.length >= 4
+                  (joinModalRoom.players || []).length >= 4
                     ? '⏳ 예약 등록하기'
                     : '🚀 방 입장하기'}
                 </button>
@@ -1701,10 +1727,25 @@ export default function Page10() {
     );
   }
 
-  if (appMode === 'NET_ROOM' && activeNetRoom) {
-    const isHost = activeNetRoom.players[0]?.id === mySessionId;
-    const amIWaitlisted = activeNetRoom.waitlist.some((w) => w.id === mySessionId);
-    const amIPlaying = activeNetRoom.players.some((p) => p.id === mySessionId);
+  if (appMode === 'NET_ROOM') {
+    if (!activeNetRoom) {
+      return (
+        <div className="lab-container" style={{ background: PLAYER_BG_COLORS[0], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="setup-card" style={{ textAlign: 'center' }}>
+            <h2>⏳ 방 정보를 불러오는 중입니다...</h2>
+            <button type="button" className="btn btn-secondary" style={{ marginTop: '12px' }} onClick={() => setAppMode('NET_LOBBY')}>
+              ⬅️ 로비로 돌아가기
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const roomPlayers = activeNetRoom.players || [];
+    const roomWaitlist = activeNetRoom.waitlist || [];
+    const isHost = roomPlayers[0]?.id === mySessionId;
+    const amIWaitlisted = roomWaitlist.some((w) => w.id === mySessionId);
+    const amIPlaying = roomPlayers.some((p) => p.id === mySessionId);
 
     if (activeNetRoom.status === 'WAITING' || activeNetRoom.status === 'EMPTY') {
       return (
@@ -1720,7 +1761,7 @@ export default function Page10() {
                 🚪 방 나가기
               </button>
               <span className="room-status-pill waiting">
-                제 {activeNetRoom.roomId}방 · 대기중 ({activeNetRoom.players.length}/4명)
+                제 {activeNetRoom.roomId}방 · 대기중 ({roomPlayers.length}/4명)
               </span>
             </div>
 
@@ -1773,7 +1814,7 @@ export default function Page10() {
             <div className="setting-section">
               <label className="setting-label">🧭 입장한 탐험가 (2~4명)</label>
               <div className="player-list">
-                {activeNetRoom.players.map((p, idx) => (
+                {roomPlayers.map((p, idx) => (
                   <div key={p.id} className="player-item">
                     <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span
@@ -1794,14 +1835,14 @@ export default function Page10() {
               <button
                 type="button"
                 className="btn btn-success"
-                disabled={activeNetRoom.players.length < 2}
+                disabled={roomPlayers.length < 2}
                 onClick={handleStartNetGameFromLobby}
               >
-                🚀 레벨 1 게임 시작하기 ({activeNetRoom.players.length}/4명)
+                🚀 레벨 1 게임 시작하기 ({roomPlayers.length}/4명)
               </button>
             ) : (
               <div className="waiting-host-banner">
-                ⏳ 방장({activeNetRoom.players[0]?.name})님이 시작 버튼을 누르면 게임이 시작됩니다!
+                ⏳ 방장({roomPlayers[0]?.name || '방장'})님이 시작 버튼을 누르면 게임이 시작됩니다!
               </div>
             )}
           </div>
@@ -1809,9 +1850,15 @@ export default function Page10() {
       );
     }
 
-    const netBoard: BoardTile[][] = JSON.parse(activeNetRoom.boardFlat || '[]');
-    const netCurrIdx = activeNetRoom.currentPlayerIdx;
-    const netCurrPlayer = activeNetRoom.players[netCurrIdx];
+    let netBoard: BoardTile[][] = [[]];
+    try {
+      netBoard = JSON.parse(activeNetRoom.boardFlat || '[[]]');
+    } catch {
+      netBoard = [[]];
+    }
+
+    const netCurrIdx = activeNetRoom.currentPlayerIdx || 0;
+    const netCurrPlayer = roomPlayers[netCurrIdx];
     const isMyTurn = netCurrPlayer?.id === mySessionId;
     const isNetShiftPhase = activeNetRoom.turnPhase === 'SHIFT' && isMyTurn;
     const isNetMovePhase = activeNetRoom.turnPhase === 'MOVE' && isMyTurn;
@@ -1825,9 +1872,7 @@ export default function Page10() {
         : new Map<string, { r: number; c: number }[]>();
 
     const levelCards = getLevelCardCount(activeNetRoom.baseCards, activeNetRoom.level);
-    const levelWinner = activeNetRoom.players.find(
-      (p) => p.id === activeNetRoom.levelWinnerId
-    );
+    const levelWinner = roomPlayers.find((p) => p.id === activeNetRoom.levelWinnerId);
     const amILevelWinner = activeNetRoom.levelWinnerId === mySessionId;
 
     return (
@@ -1855,7 +1900,7 @@ export default function Page10() {
             </div>
 
             <div className="player-status-bar">
-              {activeNetRoom.players.map((p, idx) => {
+              {roomPlayers.map((p, idx) => {
                 const isActive = idx === netCurrIdx;
                 return (
                   <div
@@ -1872,7 +1917,7 @@ export default function Page10() {
                         {p.id === mySessionId ? '(나)' : ''}
                       </strong>
                       <span className="badge-score">
-                        {p.collected.length}/{levelCards}
+                        {(p.collected || []).length}/{levelCards}
                       </span>
                     </div>
                   </div>
@@ -1890,11 +1935,11 @@ export default function Page10() {
             </button>
           </div>
 
-          {(amIWaitlisted || activeNetRoom.waitlist.length > 0) && (
+          {(amIWaitlisted || roomWaitlist.length > 0) && (
             <div className="net-waitlist-strip">
               {amIWaitlisted
                 ? '⏳ 현재 다음 레벨 예약 대기 중입니다! 이번 레벨이 끝나면 자동으로 참가됩니다.'
-                : `⏳ 다음 레벨 예약자 (${activeNetRoom.waitlist.length}명): ${activeNetRoom.waitlist
+                : `⏳ 다음 레벨 예약자 (${roomWaitlist.length}명): ${roomWaitlist
                     .map((w) => w.name)
                     .join(', ')}`}
             </div>
@@ -1964,7 +2009,7 @@ export default function Page10() {
                       const cellKey = `${r},${c}`;
                       const isReachable =
                         activeNetRoom.turnPhase === 'MOVE' && netReachableCells.has(cellKey);
-                      const piecesHere = activeNetRoom.players.filter(
+                      const piecesHere = roomPlayers.filter(
                         (p) => p.row === r && p.col === c
                       );
                       const activePieceHere = piecesHere.find((p) => p.id === netCurrPlayer?.id);
@@ -1973,7 +2018,7 @@ export default function Page10() {
 
                       return (
                         <div
-                          key={tile.uid}
+                          key={tile?.uid || `${r}-${c}`}
                           className={`maze-cell-slot ${isReachable ? 'reachable-cell' : ''}`}
                           onPointerDown={() => {
                             if (piecesHere.length > 0) startLongPressPeek();
@@ -1987,9 +2032,9 @@ export default function Page10() {
                           }}
                         >
                           <div className="tile-slide-layer">
-                            {renderTileGraphic(
+                            {tile && renderTileGraphic(
                               tile,
-                              activeNetRoom.players,
+                              roomPlayers,
                               netCurrPlayer,
                               true,
                               false
@@ -2117,7 +2162,7 @@ export default function Page10() {
                   >
                     {renderTileGraphic(
                       activeNetRoom.spareTile,
-                      activeNetRoom.players,
+                      roomPlayers,
                       netCurrPlayer,
                       true,
                       true
@@ -2162,9 +2207,10 @@ export default function Page10() {
                 </div>
 
                 {(() => {
-                  const myPlayerObj = activeNetRoom.players.find((p) => p.id === mySessionId);
+                  const myPlayerObj = roomPlayers.find((p) => p.id === mySessionId);
                   const displayOwner = myPlayerObj || netCurrPlayer;
-                  const displayTarget = displayOwner?.targetStack[0] || null;
+                  const displayTarget = displayOwner?.targetStack?.[0] || null;
+                  const collectedArr = displayOwner?.collected || [];
 
                   return (
                     <div className="dock-goal-and-bag">
@@ -2192,13 +2238,13 @@ export default function Page10() {
 
                       <div className="dock-bag-box">
                         <span className="dock-bag-title">
-                          획득 보물 ({displayOwner.collected.length}/{levelCards})
+                          획득 보물 ({collectedArr.length}/{levelCards})
                         </span>
                         <div className="dock-bag-icons">
-                          {displayOwner.collected.length === 0 ? (
+                          {collectedArr.length === 0 ? (
                             <span className="dock-bag-empty">없음</span>
                           ) : (
-                            displayOwner.collected.map((item) => (
+                            collectedArr.map((item) => (
                               <span key={item.id} className="bag-emoji-badge">
                                 {item.emoji}
                               </span>
@@ -2228,13 +2274,13 @@ export default function Page10() {
               <p className="modal-subtext">
                 {activeNetRoom.level >= 5
                   ? '축하합니다! 최종 5레벨까지 모든 미로 탐험을 마쳤습니다!'
-                  : activeNetRoom.players.length + activeNetRoom.waitlist.length > 4
+                  : roomPlayers.length + roomWaitlist.length > 4
                   ? '예약 인원이 정원(4명)을 초과하여 1등을 제외한 인원은 교체되고 예약자가 합류합니다!'
                   : '다음 레벨에서는 보물이 늘어나고 제한시간이 10초 단축됩니다!'}
               </p>
 
               <div className="rank-list">
-                {activeNetRoom.players.map((p) => {
+                {roomPlayers.map((p) => {
                   const isChamp = p.id === activeNetRoom.levelWinnerId;
                   return (
                     <div key={p.id} className={`rank-item ${isChamp ? 'winner' : ''}`}>
@@ -2246,14 +2292,14 @@ export default function Page10() {
                         {p.name}
                       </span>
                       <span>
-                        {p.collected.length} / {levelCards}개
+                        {(p.collected || []).length} / {levelCards}개
                       </span>
                     </div>
                   );
                 })}
               </div>
 
-              {activeNetRoom.waitlist.length > 0 && activeNetRoom.level < 5 && (
+              {roomWaitlist.length > 0 && activeNetRoom.level < 5 && (
                 <div
                   style={{
                     background: '#eff6ff',
@@ -2265,7 +2311,7 @@ export default function Page10() {
                     marginBottom: '14px',
                   }}
                 >
-                  ⏳ 합류 대기 예약자: {activeNetRoom.waitlist.map((w) => w.name).join(', ')}
+                  ⏳ 합류 대기 예약자: {roomWaitlist.map((w) => w.name).join(', ')}
                 </div>
               )}
 
@@ -2300,7 +2346,7 @@ export default function Page10() {
   }
 
   const currentPlayer = players[currentPlayerIdx];
-  const currentTarget = currentPlayer?.targetStack[0] || null;
+  const currentTarget = currentPlayer?.targetStack?.[0] || null;
 
   const reachableCells =
     gameState === 'PLAYING' && turnPhase === 'MOVE' && currentPlayer && board.length > 0
@@ -2507,7 +2553,7 @@ export default function Page10() {
                       </span>
                       <strong>{p.name}</strong>
                       <span className="badge-score">
-                        {p.collected.length}/{cardsPerPlayer}
+                        {(p.collected || []).length}/{cardsPerPlayer}
                       </span>
                     </div>
                   </div>
@@ -2596,7 +2642,7 @@ export default function Page10() {
 
                     return (
                       <div
-                        key={tile.uid}
+                        key={tile?.uid || `${r}-${c}`}
                         className={`maze-cell-slot ${isReachable ? 'reachable-cell' : ''} ${
                           isCurrentPos ? 'current-player-cell' : ''
                         }`}
@@ -2615,7 +2661,7 @@ export default function Page10() {
                         }}
                       >
                         <div className="tile-slide-layer" style={shiftStyle}>
-                          {renderTileGraphic(tile, players, currentPlayer, true, false)}
+                          {tile && renderTileGraphic(tile, players, currentPlayer, true, false)}
 
                           {piecesHere.length > 0 && (
                             <div
@@ -2804,13 +2850,13 @@ export default function Page10() {
 
                 <div className="dock-bag-box">
                   <span className="dock-bag-title">
-                    획득 보물 ({currentPlayer.collected.length}/{cardsPerPlayer})
+                    획득 보물 ({(currentPlayer.collected || []).length}/{cardsPerPlayer})
                   </span>
                   <div className="dock-bag-icons">
-                    {currentPlayer.collected.length === 0 ? (
+                    {(currentPlayer.collected || []).length === 0 ? (
                       <span className="dock-bag-empty">없음</span>
                     ) : (
-                      currentPlayer.collected.map((item) => (
+                      (currentPlayer.collected || []).map((item) => (
                         <span key={item.id} className="bag-emoji-badge" title={item.name}>
                           {item.emoji}
                         </span>
@@ -2864,7 +2910,7 @@ export default function Page10() {
                       {p.name}
                     </span>
                     <span>
-                      획득 보물: {p.collected.length} / {cardsPerPlayer}개
+                      획득 보물: {(p.collected || []).length} / {cardsPerPlayer}개
                     </span>
                   </div>
                 );
