@@ -1,257 +1,226 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import {
+  ref,
+  onValue,
+  set,
+  update,
+  get,
+  runTransaction
+} from 'firebase/database';
+import { db } from './firebase';
 import './Page8.css';
 
-type Suit = '♠' | '♥' | '♦' | '♣';
+type StoneColor = 'BLACK' | 'WHITE';
+type CellValue = StoneColor | null;
 
-interface PokerCard {
+interface Coord {
+  r: number;
+  c: number;
+}
+
+interface OmokPlayer {
   id: string;
-  suit: Suit;
-  rank: number; // 2 ~ 14 (11:J, 12:Q, 13:K, 14:A)
-  label: string;
-}
-
-interface Player {
-  id: number;
   name: string;
-  chips: number;
-  hand: PokerCard[];
-  currentBet: number;
-  folded: boolean;
-  totalWins: number;
+  stone: StoneColor;
+  wins: number;
+  movesCount: number;
 }
 
-interface HandEvaluation {
-  tier: number; // 1(하이카드) ~ 10(로열 플러시)
+interface WaitlistPlayer {
+  id: string;
   name: string;
-  tieBreakers: number[];
 }
 
-type GameState =
-  | 'SETUP'
-  | 'READY'
-  | 'PASS_SCREEN'
-  | 'BETTING_1'
-  | 'DRAW'
-  | 'BETTING_2'
-  | 'SHOWDOWN'
-  | 'GAME_OVER';
+interface SpectatorPlayer {
+  id: string;
+  name: string;
+}
 
-const SUITS: Suit[] = ['♠', '♥', '♦', '♣'];
-const RANKS = [
-  { rank: 2, label: '2' },
-  { rank: 3, label: '3' },
-  { rank: 4, label: '4' },
-  { rank: 5, label: '5' },
-  { rank: 6, label: '6' },
-  { rank: 7, label: '7' },
-  { rank: 8, label: '8' },
-  { rank: 9, label: '9' },
-  { rank: 10, label: '10' },
-  { rank: 11, label: 'J' },
-  { rank: 12, label: 'Q' },
-  { rank: 13, label: 'K' },
-  { rank: 14, label: 'A' },
-];
+interface NetOmokRoomData {
+  roomId: number;
+  status: 'EMPTY' | 'WAITING' | 'PLAYING' | 'ROUND_OVER';
+  players: OmokPlayer[];
+  waitlist: WaitlistPlayer[];
+  spectators: SpectatorPlayer[];
+  targetWins: number;
+  baseTimeout: number;
+  round: number;
+  boardFlat: string;
+  currentTurn: StoneColor;
+  lastMove: Coord | null;
+  winningLine: Coord[];
+  turnDeadline: number | null;
+  roundWinnerId: string | null;
+  isDraw: boolean;
+  lastActionNotice: string;
+  consecutiveTimeouts: number;
+  waitingSince: number | null;
+}
 
-const PLAYER_BG_COLORS = [
-  'linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 50%, #faf5ff 100%)',
-  'linear-gradient(135deg, #fce7f3 0%, #fae8ff 50%, #fef3c7 100%)',
-  'linear-gradient(135deg, #dcfce7 0%, #f0fdf4 50%, #e0f2fe 100%)',
-  'linear-gradient(135deg, #ffedd5 0%, #fff7ed 50%, #fef2f2 100%)',
-  'linear-gradient(135deg, #f3e8ff 0%, #faf5ff 100%, #e0e7ff 100%)',
-];
+interface HallOfFameRecord {
+  id: string;
+  name: string;
+  recordDetail: string;
+  date: string;
+}
+
+const BOARD_SIZE = 15;
+
+// 화점 좌표 (15x15 표준: 3, 7, 11 교차점)
+const STAR_POINTS = new Set([
+  '3,3', '3,7', '3,11',
+  '7,3', '7,7', '7,11',
+  '11,3', '11,7', '11,11',
+]);
+
+const TURN_BG_COLORS: Record<StoneColor, string> = {
+  BLACK: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #ffedd5 100%)',
+  WHITE: 'linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 50%, #f8fafc 100%)',
+};
 
 const CONFETTI_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
 
-// 52장 덱 생성 및 셔플
-function createShuffledDeck(): PokerCard[] {
-  const deck: PokerCard[] = [];
-  for (const suit of SUITS) {
-    for (const r of RANKS) {
-      deck.push({
-        id: `${suit}-${r.rank}-${Math.random()}`,
-        suit,
-        rank: r.rank,
-        label: r.label,
-      });
-    }
-  }
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-  return deck;
+function createEmptyBoard(): CellValue[][] {
+  return Array.from({ length: BOARD_SIZE }, () =>
+    Array.from({ length: BOARD_SIZE }, () => null)
+  );
 }
 
-// 5장 포커 족보 판정 엔진
-function evaluateHand(cards: PokerCard[]): HandEvaluation {
-  if (cards.length < 5) return { tier: 0, name: '패 없음', tieBreakers: [] };
+/**
+ * 4방향(가로, 세로, 좌상->우하 대각선, 우상->좌하 대각선) 5목 달성 여부 검사
+ */
+function checkFiveInARow(
+  board: CellValue[][],
+  row: number,
+  col: number,
+  color: StoneColor
+): Coord[] | null {
+  const directions: [number, number][] = [
+    [0, 1],  // 가로
+    [1, 0],  // 세로
+    [1, 1],  // 대각선 ↘
+    [1, -1], // 대각선 ↙
+  ];
 
-  const sorted = [...cards].sort((a, b) => b.rank - a.rank);
-  const ranks = sorted.map((c) => c.rank);
-  const suits = sorted.map((c) => c.suit);
+  for (const [dr, dc] of directions) {
+    const line: Coord[] = [{ r: row, c: col }];
 
-  const isFlush = suits.every((s) => s === suits[0]);
-
-  // 스트레이트 체크 (A-2-3-4-5 백스트레이트 포함)
-  let isStraight = false;
-  let straightHigh = ranks[0];
-  const uniqueRanks = Array.from(new Set(ranks));
-  if (uniqueRanks.length === 5) {
-    if (ranks[0] - ranks[4] === 4) {
-      isStraight = true;
-      straightHigh = ranks[0];
-    } else if (
-      ranks[0] === 14 &&
-      ranks[1] === 5 &&
-      ranks[2] === 4 &&
-      ranks[3] === 3 &&
-      ranks[4] === 2
+    // 정방향 탐색
+    let nr = row + dr;
+    let nc = col + dc;
+    while (
+      nr >= 0 &&
+      nr < BOARD_SIZE &&
+      nc >= 0 &&
+      nc < BOARD_SIZE &&
+      board[nr]?.[nc] === color
     ) {
-      isStraight = true;
-      straightHigh = 5;
+      line.push({ r: nr, c: nc });
+      nr += dr;
+      nc += dc;
+    }
+
+    // 역방향 탐색
+    nr = row - dr;
+    nc = col - dc;
+    while (
+      nr >= 0 &&
+      nr < BOARD_SIZE &&
+      nc >= 0 &&
+      nc < BOARD_SIZE &&
+      board[nr]?.[nc] === color
+    ) {
+      line.unshift({ r: nr, c: nc });
+      nr -= dr;
+      nc -= dc;
+    }
+
+    if (line.length >= 5) {
+      return line;
     }
   }
 
-  // 숫자별 빈도 계산
-  const freqMap: Record<number, number> = {};
-  ranks.forEach((r) => {
-    freqMap[r] = (freqMap[r] || 0) + 1;
-  });
-
-  const groups = Object.entries(freqMap)
-    .map(([rank, count]) => ({ rank: Number(rank), count }))
-    .sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return b.rank - a.rank;
-    });
-
-  const rankName = (r: number) => RANKS.find((item) => item.rank === r)?.label || String(r);
-
-  if (isFlush && isStraight) {
-    if (straightHigh === 14) {
-      return { tier: 10, name: '👑 로열 스트레이트 플러시', tieBreakers: [14] };
-    }
-    return {
-      tier: 9,
-      name: `🔥 ${rankName(straightHigh)} 스트레이트 플러시`,
-      tieBreakers: [straightHigh],
-    };
-  }
-
-  if (groups[0].count === 4) {
-    return {
-      tier: 8,
-      name: `💎 ${rankName(groups[0].rank)} 포카드`,
-      tieBreakers: [groups[0].rank, groups[1].rank],
-    };
-  }
-
-  if (groups[0].count === 3 && groups[1].count === 2) {
-    return {
-      tier: 7,
-      name: `🏠 풀하우스 (${rankName(groups[0].rank)} 풀 ${rankName(groups[1].rank)})`,
-      tieBreakers: [groups[0].rank, groups[1].rank],
-    };
-  }
-
-  if (isFlush) {
-    return { tier: 6, name: `💧 ${suits[0]} 플러시`, tieBreakers: ranks };
-  }
-
-  if (isStraight) {
-    return { tier: 5, name: `⚡ ${rankName(straightHigh)} 스트레이트`, tieBreakers: [straightHigh] };
-  }
-
-  if (groups[0].count === 3) {
-    return {
-      tier: 4,
-      name: `🔱 ${rankName(groups[0].rank)} 트리플`,
-      tieBreakers: [groups[0].rank, groups[1].rank, groups[2].rank],
-    };
-  }
-
-  if (groups[0].count === 2 && groups[1].count === 2) {
-    return {
-      tier: 3,
-      name: `✌️ 투페어 (${rankName(groups[0].rank)}, ${rankName(groups[1].rank)})`,
-      tieBreakers: [groups[0].rank, groups[1].rank, groups[2].rank],
-    };
-  }
-
-  if (groups[0].count === 2) {
-    return {
-      tier: 2,
-      name: `☝️ ${rankName(groups[0].rank)} 원페어`,
-      tieBreakers: [groups[0].rank, groups[1].rank, groups[2].rank, groups[3].rank],
-    };
-  }
-
-  return {
-    tier: 1,
-    name: `🃏 ${rankName(ranks[0])} 하이카드`,
-    tieBreakers: ranks,
-  };
+  return null;
 }
 
-// 두 족보 비교 (a가 크면 양수, b가 크면 음수, 무승부면 0)
-function compareHands(a: HandEvaluation, b: HandEvaluation): number {
-  if (a.tier !== b.tier) return a.tier - b.tier;
-  for (let i = 0; i < Math.min(a.tieBreakers.length, b.tieBreakers.length); i++) {
-    if (a.tieBreakers[i] !== b.tieBreakers[i]) {
-      return a.tieBreakers[i] - b.tieBreakers[i];
+function isBoardFull(board: CellValue[][]): boolean {
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r]?.[c] === null) return false;
     }
   }
-  return 0;
+  return true;
+}
+
+function createDefaultOmokRoom(roomId: number): NetOmokRoomData {
+  return {
+    roomId,
+    status: 'EMPTY',
+    players: [],
+    waitlist: [],
+    spectators: [],
+    targetWins: 1,
+    baseTimeout: 30,
+    round: 1,
+    boardFlat: JSON.stringify(createEmptyBoard()),
+    currentTurn: 'BLACK',
+    lastMove: null,
+    winningLine: [],
+    turnDeadline: null,
+    roundWinnerId: null,
+    isDraw: false,
+    lastActionNotice: '',
+    consecutiveTimeouts: 0,
+    waitingSince: null,
+  };
 }
 
 export default function Page8() {
-  const [gameState, setGameState] = useState<GameState>('SETUP');
-  const [nextPhaseAfterPass, setNextPhaseAfterPass] = useState<'BETTING_1' | 'DRAW' | 'BETTING_2'>('BETTING_1');
+  const [appMode, setAppMode] = useState<'HOME' | 'SOLO' | 'NET_LOBBY' | 'NET_ROOM' | 'HALL_OF_FAME'>('HOME');
 
-  // 게임 설정 상태
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [inputName, setInputName] = useState('');
-  const [totalRounds, setTotalRounds] = useState<number>(3);
-  const [startingChips, setStartingChips] = useState<number>(1000);
-  const [anteAmount, setAnteAmount] = useState<number>(50);
-  const [turnLimitSec, setTurnLimitSec] = useState<number>(20);
+  const [mySessionId] = useState<string>(() => {
+    const saved = sessionStorage.getItem('omok_net_uid');
+    if (saved) return saved;
+    const generated = `omok_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    sessionStorage.setItem('omok_net_uid', generated);
+    return generated;
+  });
 
-  // 진행 상태
-  const [currentRound, setCurrentRound] = useState<number>(1);
-  const [deck, setDeck] = useState<PokerCard[]>([]);
-  const [pot, setPot] = useState<number>(0);
-  const [highestBet, setHighestBet] = useState<number>(0);
-  const [currentPlayerIdx, setCurrentPlayerIdx] = useState<number>(0);
-  const [actedInPhase, setActedInPhase] = useState<number[]>([]);
-  const [selectedDiscardIndices, setSelectedDiscardIndices] = useState<number[]>([]);
-  const [timeLeftSec, setTimeLeftSec] = useState<number>(20);
+  // 넷게임 상태
+  const [rooms, setRooms] = useState<NetOmokRoomData[]>([1, 2, 3, 4].map(createDefaultOmokRoom));
+  const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
+  const [joinModalRoom, setJoinModalRoom] = useState<NetOmokRoomData | null>(null);
+  const [joinPlayerName, setJoinPlayerName] = useState<string>('');
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [waitingCountdownSec, setWaitingCountdownSec] = useState<number>(420);
+  const timeoutHandledRef = useRef<number | null>(null);
 
-  // 쇼다운 및 토스트 상태
-  const [roundWinners, setRoundWinners] = useState<{ player: Player; evalResult: HandEvaluation }[]>([]);
-  const [toast, setToast] = useState<{ id: number; text: string; type: 'plus' | 'minus' | 'info' } | null>(null);
+  // 단독게임 상태
+  const [soloState, setSoloState] = useState<'SETUP' | 'PLAYING' | 'GAME_OVER'>('SETUP');
+  const [blackName, setBlackName] = useState<string>('흑기사');
+  const [whiteName, setWhiteName] = useState<string>('백기사');
+  const [soloTargetWins, setSoloTargetWins] = useState<number>(1);
+  const [soloPlayers, setSoloPlayers] = useState<OmokPlayer[]>([
+    { id: 'black', name: '흑기사', stone: 'BLACK', wins: 0, movesCount: 0 },
+    { id: 'white', name: '백기사', stone: 'WHITE', wins: 0, movesCount: 0 },
+  ]);
+  const [soloBoard, setSoloBoard] = useState<CellValue[][]>(createEmptyBoard);
+  const [soloTurn, setSoloTurn] = useState<StoneColor>('BLACK');
+  const [soloHistory, setSoloHistory] = useState<Coord[]>([]);
+  const [soloWinningLine, setSoloWinningLine] = useState<Coord[]>([]);
+  const [soloRoundWinner, setSoloRoundWinner] = useState<OmokPlayer | null>(null);
+  const [soloIsDraw, setSoloIsDraw] = useState<boolean>(false);
 
-  const showToast = (text: string, type: 'plus' | 'minus' | 'info' = 'info') => {
+  // 토스트 & 오디오
+  const [toast, setToast] = useState<{
+    id: number;
+    text: string;
+    type: 'info' | 'celebrate';
+  } | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const showToast = (text: string, type: 'info' | 'celebrate' = 'info') => {
     setToast({ id: Date.now(), text, type });
-  };
-
-  // 효과음 & 음성 합성
-  const playChipSound = () => {
-    try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.08);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.12);
-    } catch {}
   };
 
   const speakKorean = (text: string) => {
@@ -260,815 +229,1538 @@ export default function Page8() {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
       utterance.rate = 1.1;
+      utterance.pitch = 1.05;
       window.speechSynthesis.speak(utterance);
     }
   };
 
-  const playVictoryFanfare = () => {
+  const playSound = (kind: 'stone' | 'undo' | 'win') => {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
-      const notes = [523.25, 659.25, 783.99, 1046.5];
-      notes.forEach((freq, idx) => {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      const notesMap: Record<typeof kind, number[]> = {
+        stone: [320, 180],
+        undo: [392, 330],
+        win: [523.25, 659.25, 783.99, 1046.5],
+      };
+
+      notesMap[kind].forEach((freq, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.1);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime + idx * 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.1 + 0.3);
+        osc.type = kind === 'stone' ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.05);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + idx * 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.05 + 0.16);
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + idx * 0.1);
-        osc.stop(ctx.currentTime + idx * 0.1 + 0.3);
+        osc.start(ctx.currentTime + idx * 0.05);
+        osc.stop(ctx.currentTime + idx * 0.05 + 0.16);
       });
     } catch {}
   };
 
-  // 참가자 관리
-  const addPlayer = () => {
-    if (!inputName.trim() || players.length >= 6) return;
-    setPlayers([
-      ...players,
-      {
-        id: Date.now(),
-        name: inputName.trim(),
-        chips: startingChips,
-        hand: [],
-        currentBet: 0,
-        folded: false,
-        totalWins: 0,
-      },
-    ]);
-    setInputName('');
+  const saveHallOfFameRecord = (type: 'SOLO' | 'NET', record: { name: string; recordDetail: string }) => {
+    const key = type === 'SOLO' ? 'omok_hof_solo' : 'omok_hof_net';
+    try {
+      const existing: HallOfFameRecord[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const newEntry: HallOfFameRecord = {
+        id: `rec_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        name: record.name,
+        recordDetail: record.recordDetail,
+        date: new Date().toLocaleDateString(),
+      };
+      const updated = [newEntry, ...existing].slice(0, 10);
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const removePlayer = (id: number) => {
-    setPlayers(players.filter((p) => p.id !== id));
+  const getHallOfFameRecords = (type: 'SOLO' | 'NET'): HallOfFameRecord[] => {
+    const key = type === 'SOLO' ? 'omok_hof_solo' : 'omok_hof_net';
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch {
+      return [];
+    }
   };
 
-  const movePlayerOrder = (index: number, direction: 'UP' | 'DOWN') => {
-    const newPlayers = [...players];
-    const targetIdx = direction === 'UP' ? index - 1 : index + 1;
-    if (targetIdx < 0 || targetIdx >= newPlayers.length) return;
-    [newPlayers[index], newPlayers[targetIdx]] = [newPlayers[targetIdx], newPlayers[index]];
-    setPlayers(newPlayers);
+  // =========================================================
+  // Firebase 실시간 방 구독
+  // =========================================================
+  useEffect(() => {
+    if (appMode !== 'NET_LOBBY' && appMode !== 'NET_ROOM') return;
+
+    const ensureRoomsExist = async () => {
+      for (const id of [1, 2, 3, 4]) {
+        const roomRef = ref(db, `omok_rooms/room_${id}`);
+        const snap = await get(roomRef);
+        if (!snap.exists()) {
+          await set(roomRef, createDefaultOmokRoom(id));
+        }
+      }
+    };
+    ensureRoomsExist();
+
+    const roomsRef = ref(db, 'omok_rooms');
+    const unsubscribe = onValue(roomsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      const loadedRooms: NetOmokRoomData[] = [1, 2, 3, 4].map((id) => {
+        const rData = data[`room_${id}`];
+        const def = createDefaultOmokRoom(id);
+        if (!rData) return def;
+        return {
+          ...def,
+          ...rData,
+          players: rData.players || [],
+          waitlist: rData.waitlist || [],
+          spectators: rData.spectators || [],
+          winningLine: rData.winningLine || [],
+        };
+      });
+      setRooms(loadedRooms);
+    });
+
+    return () => unsubscribe();
+  }, [appMode]);
+
+  const activeNetRoom =
+    appMode === 'NET_ROOM' && selectedRoomId
+      ? rooms.find((r) => r.roomId === selectedRoomId) || null
+      : null;
+
+  // 대기실 7분 타임아웃 및 대국 턴 제한시간 감지
+  useEffect(() => {
+    if (appMode !== 'NET_ROOM' || !activeNetRoom) {
+      setRemainingSeconds(0);
+      setWaitingCountdownSec(420);
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      const now = Date.now();
+
+      if (activeNetRoom.status === 'WAITING' && activeNetRoom.waitingSince) {
+        const elapsedSec = (now - activeNetRoom.waitingSince) / 1000;
+        const leftSec = Math.max(0, 420 - Math.floor(elapsedSec));
+        setWaitingCountdownSec(leftSec);
+
+        if (elapsedSec >= 425) {
+          const roomRef = ref(db, `omok_rooms/room_${activeNetRoom.roomId}`);
+          await set(roomRef, createDefaultOmokRoom(activeNetRoom.roomId));
+          showToast('⏳ 대기 시간이 7분을 초과하여 방이 자동으로 비워졌습니다.', 'info');
+          setSelectedRoomId(null);
+          setAppMode('NET_LOBBY');
+          return;
+        }
+      }
+
+      if (activeNetRoom.status === 'PLAYING' && activeNetRoom.turnDeadline) {
+        const diff = Math.max(0, Math.ceil((activeNetRoom.turnDeadline - now) / 1000));
+        setRemainingSeconds(diff);
+
+        if (diff === 0 && timeoutHandledRef.current !== activeNetRoom.turnDeadline) {
+          timeoutHandledRef.current = activeNetRoom.turnDeadline;
+          handleNetTurnTimeout(activeNetRoom);
+        }
+      }
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [appMode, activeNetRoom]);
+
+  // =========================================================
+  // 넷게임 핸들러
+  // =========================================================
+  const handleEnterRoomSubmit = async (asSpectator = false) => {
+    if (!joinModalRoom) return;
+    const trimmedName = joinPlayerName.trim();
+    if (!trimmedName) {
+      alert('참가할 이름을 입력해주세요!');
+      return;
+    }
+
+    const roomRef = ref(db, `omok_rooms/room_${joinModalRoom.roomId}`);
+
+    try {
+      let joinResultType = 'PLAYER';
+
+      await runTransaction(roomRef, (roomData) => {
+        const room: NetOmokRoomData = roomData || createDefaultOmokRoom(joinModalRoom.roomId);
+        if (!room.players) room.players = [];
+        if (!room.waitlist) room.waitlist = [];
+        if (!room.spectators) room.spectators = [];
+
+        if (asSpectator) {
+          room.spectators.push({ id: mySessionId, name: trimmedName });
+          joinResultType = 'SPECTATOR';
+          return room;
+        }
+
+        if (
+          room.players.some((p) => p.id === mySessionId) ||
+          room.waitlist.some((w) => w.id === mySessionId) ||
+          room.spectators.some((s) => s.id === mySessionId)
+        ) {
+          joinResultType = 'REJOIN';
+          return room;
+        }
+
+        if ((room.status === 'EMPTY' || room.status === 'WAITING') && room.players.length < 2) {
+          const stone: StoneColor = room.players.length === 0 ? 'BLACK' : 'WHITE';
+          const newPlayer: OmokPlayer = {
+            id: mySessionId,
+            name: trimmedName,
+            stone,
+            wins: 0,
+            movesCount: 0,
+          };
+
+          room.status = 'WAITING';
+          room.players.push(newPlayer);
+          if (!room.waitingSince) {
+            room.waitingSince = Date.now();
+          }
+          joinResultType = 'PLAYER';
+        } else {
+          room.waitlist.push({ id: mySessionId, name: trimmedName });
+          joinResultType = 'WAITLIST';
+        }
+        return room;
+      });
+
+      setSelectedRoomId(joinModalRoom.roomId);
+      setJoinModalRoom(null);
+      setJoinPlayerName('');
+      setAppMode('NET_ROOM');
+
+      if (joinResultType === 'SPECTATOR') {
+        showToast('👀 관망모드로 입장했습니다!', 'info');
+      } else if (joinResultType === 'WAITLIST') {
+        showToast('⏳ 현재 대국 중이어서 다음 판 도전자로 예약되었습니다!', 'info');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('방 입장 중 오류가 발생했습니다.');
+    }
   };
 
-  const shufflePlayersOrder = () => {
-    setPlayers([...players].sort(() => Math.random() - 0.5));
+  const updateNetRoomSettings = async (newTargetWins: number, newTimeout: number) => {
+    if (!activeNetRoom) return;
+    const roomRef = ref(db, `omok_rooms/room_${activeNetRoom.roomId}`);
+    await update(roomRef, {
+      targetWins: newTargetWins,
+      baseTimeout: newTimeout,
+      waitingSince: Date.now(),
+    });
   };
 
-  const goToMainReady = () => {
-    if (players.length < 2) return;
-    setPlayers(
-      players.map((p) => ({
-        ...p,
-        chips: startingChips,
-        hand: [],
-        currentBet: 0,
-        folded: false,
-        totalWins: 0,
-      }))
-    );
-    setCurrentRound(1);
-    setGameState('READY');
+  const handleStartNetGame = async () => {
+    if (!activeNetRoom) return;
+    const roomPlayers = activeNetRoom.players || [];
+    if (roomPlayers.length < 2) {
+      showToast('흑돌과 백돌 2명이 모여야 대국을 시작할 수 있습니다!', 'info');
+      return;
+    }
+
+    const initializedPlayers: OmokPlayer[] = roomPlayers.slice(0, 2).map((p, idx) => ({
+      ...p,
+      stone: idx === 0 ? 'BLACK' : 'WHITE',
+      wins: 0,
+      movesCount: 0,
+    }));
+
+    const roomRef = ref(db, `omok_rooms/room_${activeNetRoom.roomId}`);
+    await update(roomRef, {
+      status: 'PLAYING',
+      round: 1,
+      players: initializedPlayers,
+      boardFlat: JSON.stringify(createEmptyBoard()),
+      currentTurn: 'BLACK',
+      lastMove: null,
+      winningLine: [],
+      turnDeadline: Date.now() + activeNetRoom.baseTimeout * 1000,
+      roundWinnerId: null,
+      isDraw: false,
+      lastActionNotice: `⚫ 제 1국 시작! ${initializedPlayers[0].name}(흑돌)님부터 착수하세요.`,
+      consecutiveTimeouts: 0,
+      waitingSince: null,
+    });
   };
 
-  // 라운드 시작 및 카드 분배
-  const startRound = (roundNum: number, currentPlayersList: Player[]) => {
-    const newDeck = createShuffledDeck();
-    let totalPot = 0;
+  const handleNetPlaceStone = async (r: number, c: number) => {
+    if (!activeNetRoom || activeNetRoom.status !== 'PLAYING') return;
 
-    const updatedPlayers = currentPlayersList.map((p) => {
-      const actualAnte = Math.min(p.chips, anteAmount);
-      totalPot += actualAnte;
-      const dealtHand = newDeck.splice(0, 5);
+    const roomPlayers = activeNetRoom.players || [];
+    const currentPlayer = roomPlayers.find((p) => p.stone === activeNetRoom.currentTurn);
+    if (!currentPlayer || currentPlayer.id !== mySessionId) {
+      showToast('지금은 내 차례가 아닙니다!', 'info');
+      return;
+    }
+
+    const board: CellValue[][] = JSON.parse(activeNetRoom.boardFlat || '[]');
+    if (!board[r] || board[r][c] !== null) return;
+
+    playSound('stone');
+    const nextBoard = board.map((rowArr) => [...rowArr]);
+    nextBoard[r][c] = activeNetRoom.currentTurn;
+
+    const winLine = checkFiveInARow(nextBoard, r, c, activeNetRoom.currentTurn);
+    const draw = !winLine && isBoardFull(nextBoard);
+
+    const updatedPlayers = roomPlayers.map((p) => {
+      if (p.id !== currentPlayer.id) return p;
       return {
         ...p,
-        chips: p.chips - actualAnte,
-        hand: dealtHand,
-        currentBet: 0,
-        folded: p.chips <= 0, // 파산한 플레이어는 자동 폴드 처리
+        movesCount: (p.movesCount || 0) + 1,
+        wins: winLine ? (p.wins || 0) + 1 : p.wins || 0,
       };
     });
 
-    const firstActiveIdx = updatedPlayers.findIndex((p) => !p.folded);
+    const roomRef = ref(db, `omok_rooms/room_${activeNetRoom.roomId}`);
 
-    setDeck(newDeck);
-    setPlayers(updatedPlayers);
-    setPot(totalPot);
-    setHighestBet(0);
-    setCurrentRound(roundNum);
-    setCurrentPlayerIdx(firstActiveIdx === -1 ? 0 : firstActiveIdx);
-    setActedInPhase([]);
-    setSelectedDiscardIndices([]);
-    setRoundWinners([]);
-    setNextPhaseAfterPass('BETTING_1');
-    setGameState('PASS_SCREEN');
-  };
+    if (winLine) {
+      playSound('win');
+      const winnerObj = updatedPlayers.find((p) => p.id === currentPlayer.id)!;
+      const isMatchChampion = winnerObj.wins >= activeNetRoom.targetWins;
 
-  // 쇼다운 처리
-  const resolveShowdown = (finalPlayers: Player[], finalPot: number) => {
-    const activePlayers = finalPlayers.filter((p) => !p.folded);
-
-    if (activePlayers.length === 1) {
-      const soleWinner = activePlayers[0];
-      const evalRes = evaluateHand(soleWinner.hand);
-      setRoundWinners([{ player: soleWinner, evalResult: evalRes }]);
-      setPlayers(
-        finalPlayers.map((p) =>
-          p.id === soleWinner.id
-            ? { ...p, chips: p.chips + finalPot, totalWins: p.totalWins + 1 }
-            : p
-        )
-      );
-      playVictoryFanfare();
-      speakKorean(`${soleWinner.name}님 기권승! ${finalPot}칩 획득!`);
-      setGameState('SHOWDOWN');
-      return;
-    }
-
-    const evaluatedList = activePlayers.map((p) => ({
-      player: p,
-      evalResult: evaluateHand(p.hand),
-    }));
-
-    evaluatedList.sort((a, b) => compareHands(b.evalResult, a.evalResult));
-
-    const bestEval = evaluatedList[0].evalResult;
-    const winners = evaluatedList.filter((item) => compareHands(item.evalResult, bestEval) === 0);
-    const share = Math.floor(finalPot / winners.length);
-    const winnerIds = new Set(winners.map((w) => w.player.id));
-
-    setRoundWinners(winners);
-    setPlayers(
-      finalPlayers.map((p) =>
-        winnerIds.has(p.id)
-          ? { ...p, chips: p.chips + share, totalWins: p.totalWins + 1 }
-          : p
-      )
-    );
-
-    playVictoryFanfare();
-    if (winners.length === 1) {
-      speakKorean(`${winners[0].player.name}님 승리!`);
-    } else {
-      speakKorean('무승부! 상금을 나눕니다!');
-    }
-    setGameState('SHOWDOWN');
-  };
-
-  // 다음 활성 플레이어 찾기 및 단계 전환 로직
-  const advanceTurnOrPhase = (
-    updatedPlayers: Player[],
-    updatedPot: number,
-    updatedHighestBet: number,
-    updatedActed: number[],
-    currentPhase: 'BETTING_1' | 'DRAW' | 'BETTING_2'
-  ) => {
-    const activePlayers = updatedPlayers.filter((p) => !p.folded);
-
-    // 1명만 남으면 즉시 승리
-    if (activePlayers.length <= 1) {
-      resolveShowdown(updatedPlayers, updatedPot);
-      return;
-    }
-
-    // 현재 단계에서 모든 생존 플레이어가 행동을 마쳤고, 베팅 금액이 일치하는지 확인
-    const allActed = activePlayers.every((p) => updatedActed.includes(p.id));
-    const allBetsMatched =
-      currentPhase === 'DRAW' ||
-      activePlayers.every((p) => p.currentBet === updatedHighestBet || p.chips === 0);
-
-    if (allActed && allBetsMatched) {
-      if (currentPhase === 'BETTING_1') {
-        const nextIdx = updatedPlayers.findIndex((p) => !p.folded);
-        setPlayers(updatedPlayers);
-        setPot(updatedPot);
-        setCurrentPlayerIdx(nextIdx);
-        setActedInPhase([]);
-        setSelectedDiscardIndices([]);
-        setNextPhaseAfterPass('DRAW');
-        setGameState('PASS_SCREEN');
-      } else if (currentPhase === 'DRAW') {
-        const resetBetPlayers = updatedPlayers.map((p) => ({ ...p, currentBet: 0 }));
-        const nextIdx = resetBetPlayers.findIndex((p) => !p.folded);
-        setPlayers(resetBetPlayers);
-        setPot(updatedPot);
-        setHighestBet(0);
-        setCurrentPlayerIdx(nextIdx);
-        setActedInPhase([]);
-        setNextPhaseAfterPass('BETTING_2');
-        setGameState('PASS_SCREEN');
+      if (isMatchChampion) {
+        speakKorean(`축하합니다! ${winnerObj.name}님이 최종 승리했습니다!`);
+        saveHallOfFameRecord('NET', {
+          name: winnerObj.name,
+          recordDetail: `${activeNetRoom.targetWins}선승제 최종 우승 (${winnerObj.movesCount}수)`,
+        });
       } else {
-        resolveShowdown(updatedPlayers, updatedPot);
+        speakKorean(`${winnerObj.name}님 제 ${activeNetRoom.round}국 승리!`);
       }
+
+      await update(roomRef, {
+        boardFlat: JSON.stringify(nextBoard),
+        players: updatedPlayers,
+        lastMove: { r, c },
+        winningLine: winLine,
+        status: 'ROUND_OVER',
+        roundWinnerId: currentPlayer.id,
+        isDraw: false,
+        turnDeadline: null,
+        lastActionNotice: `🏆 ${currentPlayer.name}님이 5목을 완성했습니다!`,
+        consecutiveTimeouts: 0,
+      });
       return;
     }
 
-    // 다음 순서 플레이어 탐색
-    let nextIdx = (currentPlayerIdx + 1) % updatedPlayers.length;
-    while (updatedPlayers[nextIdx].folded) {
-      nextIdx = (nextIdx + 1) % updatedPlayers.length;
-    }
-
-    setPlayers(updatedPlayers);
-    setPot(updatedPot);
-    setHighestBet(updatedHighestBet);
-    setActedInPhase(updatedActed);
-    setCurrentPlayerIdx(nextIdx);
-    setSelectedDiscardIndices([]);
-    setNextPhaseAfterPass(currentPhase);
-    setGameState('PASS_SCREEN');
-  };
-
-  // 베팅 액션 핸들러 (체크/콜, 레이즈, 폴드)
-  const handleBetAction = (action: 'CHECK_CALL' | 'RAISE' | 'FOLD', raiseValue = 50) => {
-    const phase = gameState as 'BETTING_1' | 'BETTING_2';
-    const currentPlayer = players[currentPlayerIdx];
-    const callNeed = Math.max(0, highestBet - currentPlayer.currentBet);
-
-    playChipSound();
-
-    if (action === 'FOLD') {
-      showToast(`🏳️ ${currentPlayer.name} 다이 (Fold)`, 'minus');
-      speakKorean('다이');
-      const nextPlayers = players.map((p, i) =>
-        i === currentPlayerIdx ? { ...p, folded: true } : p
-      );
-      const nextActed = [...actedInPhase, currentPlayer.id];
-      advanceTurnOrPhase(nextPlayers, pot, highestBet, nextActed, phase);
+    if (draw) {
+      await update(roomRef, {
+        boardFlat: JSON.stringify(nextBoard),
+        players: updatedPlayers,
+        lastMove: { r, c },
+        winningLine: [],
+        status: 'ROUND_OVER',
+        roundWinnerId: null,
+        isDraw: true,
+        turnDeadline: null,
+        lastActionNotice: '🤝 바둑판이 가득 차 무승부가 되었습니다!',
+        consecutiveTimeouts: 0,
+      });
       return;
     }
 
-    if (action === 'CHECK_CALL') {
-      const actualPay = Math.min(currentPlayer.chips, callNeed);
-      const label = actualPay === 0 ? '체크 (Check)' : `콜 (+${actualPay}칩)`;
-      showToast(`✅ ${currentPlayer.name} ${label}`, 'info');
-      speakKorean(actualPay === 0 ? '체크' : '콜');
+    const nextTurn: StoneColor = activeNetRoom.currentTurn === 'BLACK' ? 'WHITE' : 'BLACK';
+    const nextPlayer = updatedPlayers.find((p) => p.stone === nextTurn);
 
-      const nextPlayers = players.map((p, i) =>
-        i === currentPlayerIdx
-          ? { ...p, chips: p.chips - actualPay, currentBet: p.currentBet + actualPay }
-          : p
-      );
-      const nextActed = Array.from(new Set([...actedInPhase, currentPlayer.id]));
-      advanceTurnOrPhase(nextPlayers, pot + actualPay, highestBet, nextActed, phase);
+    await update(roomRef, {
+      boardFlat: JSON.stringify(nextBoard),
+      players: updatedPlayers,
+      currentTurn: nextTurn,
+      lastMove: { r, c },
+      turnDeadline: Date.now() + activeNetRoom.baseTimeout * 1000,
+      lastActionNotice: `👉 다음은 ${nextPlayer?.name || ''}(${nextTurn === 'BLACK' ? '흑돌' : '백돌'})님 차례입니다.`,
+      consecutiveTimeouts: 0,
+    });
+  };
+
+  const handleNetTurnTimeout = async (room: NetOmokRoomData) => {
+    const roomRef = ref(db, `omok_rooms/room_${room.roomId}`);
+    const playersArr = room.players || [];
+    if (playersArr.length < 2) return;
+
+    const timedOutPlayer = playersArr.find((p) => p.stone === room.currentTurn);
+    const newConsecutive = (room.consecutiveTimeouts || 0) + 1;
+
+    // 연속 3회 타임아웃 시 자동 퇴장 및 방 초기화
+    if (newConsecutive >= 3 && timedOutPlayer) {
+      await set(roomRef, createDefaultOmokRoom(room.roomId));
+      showToast(`⏰ ${timedOutPlayer.name}님 장기 미응답으로 대국이 종료되었습니다.`, 'info');
       return;
     }
 
-    if (action === 'RAISE') {
-      const totalAdd = Math.min(currentPlayer.chips, callNeed + raiseValue);
-      const newPlayerBet = currentPlayer.currentBet + totalAdd;
-      const newHighest = Math.max(highestBet, newPlayerBet);
+    const nextTurn: StoneColor = room.currentTurn === 'BLACK' ? 'WHITE' : 'BLACK';
+    const nextPlayer = playersArr.find((p) => p.stone === nextTurn);
 
-      showToast(`🔥 ${currentPlayer.name} 레이즈! (+${totalAdd}칩)`, 'plus');
-      speakKorean('레이즈!');
-
-      const nextPlayers = players.map((p, i) =>
-        i === currentPlayerIdx
-          ? { ...p, chips: p.chips - totalAdd, currentBet: newPlayerBet }
-          : p
-      );
-      // 레이즈가 발생하면 다른 플레이어들도 다시 응답해야 함
-      advanceTurnOrPhase(nextPlayers, pot + totalAdd, newHighest, [currentPlayer.id], phase);
-    }
+    await update(roomRef, {
+      currentTurn: nextTurn,
+      turnDeadline: Date.now() + room.baseTimeout * 1000,
+      lastActionNotice: `⏰ ${timedOutPlayer?.name || '상대'}님 시간 초과! ${nextPlayer?.name || ''}님에게 턴이 넘어갑니다.`,
+      consecutiveTimeouts: newConsecutive,
+    });
   };
 
-  // 카드 교체(Draw) 핸들러
-  const toggleDiscardCard = (cardIdx: number) => {
-    if (gameState !== 'DRAW') return;
-    setSelectedDiscardIndices((prev) =>
-      prev.includes(cardIdx) ? prev.filter((i) => i !== cardIdx) : [...prev, cardIdx]
-    );
-  };
+  const handleNextNetRound = async () => {
+    if (!activeNetRoom) return;
+    const roomRef = ref(db, `omok_rooms/room_${activeNetRoom.roomId}`);
 
-  const confirmDrawCards = () => {
-    const currentPlayer = players[currentPlayerIdx];
-    const count = selectedDiscardIndices.length;
-    const deckCopy = [...deck];
+    await runTransaction(roomRef, (roomData) => {
+      if (!roomData) return roomData;
+      const room = roomData as NetOmokRoomData;
+      const playersArr = room.players || [];
+      const waitlistArr = room.waitlist || [];
 
-    const newHand = currentPlayer.hand.map((card, idx) => {
-      if (selectedDiscardIndices.includes(idx) && deckCopy.length > 0) {
-        return deckCopy.shift()!;
+      const matchWinner = playersArr.find((p) => p.wins >= room.targetWins);
+
+      // 시리즈(목표 승수)가 끝났고 대기자가 있다면 승자 잔류 + 대기자 교체
+      if (matchWinner) {
+        if (waitlistArr.length > 0) {
+          const challenger = waitlistArr[0];
+          const remainingWaitlist = waitlistArr.slice(1);
+          const nextPlayers: OmokPlayer[] = [
+            { ...matchWinner, stone: 'BLACK', wins: 0, movesCount: 0 },
+            { id: challenger.id, name: challenger.name, stone: 'WHITE', wins: 0, movesCount: 0 },
+          ];
+          room.players = nextPlayers;
+          room.waitlist = remainingWaitlist;
+          room.status = 'PLAYING';
+          room.round = 1;
+          room.boardFlat = JSON.stringify(createEmptyBoard());
+          room.currentTurn = 'BLACK';
+          room.lastMove = null;
+          room.winningLine = [];
+          room.roundWinnerId = null;
+          room.isDraw = false;
+          room.turnDeadline = Date.now() + room.baseTimeout * 1000;
+          room.lastActionNotice = `🔥 새로운 도전자 ${challenger.name}님과 대국을 시작합니다!`;
+          room.consecutiveTimeouts = 0;
+          return room;
+        }
+
+        // 대기자가 없으면 승수 초기화 후 재대결(흑/백 교대)
+        const swappedPlayers: OmokPlayer[] = playersArr.map((p) => ({
+          ...p,
+          stone: p.stone === 'BLACK' ? 'WHITE' : 'BLACK',
+          wins: 0,
+          movesCount: 0,
+        }));
+        room.players = swappedPlayers;
+        room.status = 'PLAYING';
+        room.round = 1;
+        room.boardFlat = JSON.stringify(createEmptyBoard());
+        room.currentTurn = 'BLACK';
+        room.lastMove = null;
+        room.winningLine = [];
+        room.roundWinnerId = null;
+        room.isDraw = false;
+        room.turnDeadline = Date.now() + room.baseTimeout * 1000;
+        room.lastActionNotice = '🔄 흑/백을 교대하여 새 대국을 시작합니다!';
+        room.consecutiveTimeouts = 0;
+        return room;
       }
-      return card;
+
+      // 시리즈 진행 중 다음 라운드 (흑/백 교대)
+      const nextRound = room.round + 1;
+      const swappedPlayers: OmokPlayer[] = playersArr.map((p) => ({
+        ...p,
+        stone: p.stone === 'BLACK' ? 'WHITE' : 'BLACK',
+        movesCount: 0,
+      }));
+
+      room.players = swappedPlayers;
+      room.status = 'PLAYING';
+      room.round = nextRound;
+      room.boardFlat = JSON.stringify(createEmptyBoard());
+      room.currentTurn = 'BLACK';
+      room.lastMove = null;
+      room.winningLine = [];
+      room.roundWinnerId = null;
+      room.isDraw = false;
+      room.turnDeadline = Date.now() + room.baseTimeout * 1000;
+      room.lastActionNotice = `⚔️ 제 ${nextRound}국 시작! 흑/백이 교대되었습니다.`;
+      room.consecutiveTimeouts = 0;
+      return room;
+    });
+  };
+
+  const handleLeaveNetRoom = async () => {
+    if (!activeNetRoom) {
+      setAppMode('NET_LOBBY');
+      return;
+    }
+
+    const roomRef = ref(db, `omok_rooms/room_${activeNetRoom.roomId}`);
+    await runTransaction(roomRef, (roomData) => {
+      if (!roomData) return roomData;
+      const room = roomData as NetOmokRoomData;
+      const filteredPlayers = (room.players || []).filter((p) => p.id !== mySessionId);
+      const filteredWaitlist = (room.waitlist || []).filter((w) => w.id !== mySessionId);
+      const filteredSpectators = (room.spectators || []).filter((s) => s.id !== mySessionId);
+
+      if (filteredPlayers.length === 0 && filteredSpectators.length === 0) {
+        return createDefaultOmokRoom(room.roomId);
+      }
+
+      if (room.status === 'PLAYING' && filteredPlayers.length < 2) {
+        return createDefaultOmokRoom(room.roomId);
+      }
+
+      room.players = filteredPlayers;
+      room.waitlist = filteredWaitlist;
+      room.spectators = filteredSpectators;
+      if (filteredPlayers.length < 2) {
+        room.status = filteredPlayers.length === 0 ? 'EMPTY' : 'WAITING';
+        room.turnDeadline = null;
+      }
+      return room;
     });
 
-    playChipSound();
-    showToast(
-      count === 0
-        ? `🛡️ ${currentPlayer.name} 카드 유지 (Stay)`
-        : `🔄 ${currentPlayer.name} 카드 ${count}장 교체`,
-      'info'
-    );
-    speakKorean(count === 0 ? '스테이' : `${count}장 교체`);
-
-    const nextPlayers = players.map((p, i) =>
-      i === currentPlayerIdx ? { ...p, hand: newHand } : p
-    );
-    const nextActed = Array.from(new Set([...actedInPhase, currentPlayer.id]));
-
-    setDeck(deckCopy);
-    advanceTurnOrPhase(nextPlayers, pot, highestBet, nextActed, 'DRAW');
+    setSelectedRoomId(null);
+    setAppMode('NET_LOBBY');
   };
 
-  // 턴 제한시간 타이머 (타임오버 시 자동 체크 또는 폴드)
-  useEffect(() => {
-    if (gameState !== 'BETTING_1' && gameState !== 'DRAW' && gameState !== 'BETTING_2') return;
+  // =========================================================
+  // 단독게임 핸들러
+  // =========================================================
+  const startSoloGame = () => {
+    const bName = blackName.trim() || '흑기사';
+    const wName = whiteName.trim() || '백기사';
 
-    setTimeLeftSec(turnLimitSec);
-    const timer = window.setInterval(() => {
-      setTimeLeftSec((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          if (gameState === 'DRAW') {
-            confirmDrawCards();
-          } else {
-            const currentP = players[currentPlayerIdx];
-            const needCall = highestBet > (currentP?.currentBet || 0);
-            handleBetAction(needCall ? 'FOLD' : 'CHECK_CALL');
-          }
-          return turnLimitSec;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    setSoloPlayers([
+      { id: 'black', name: bName, stone: 'BLACK', wins: 0, movesCount: 0 },
+      { id: 'white', name: wName, stone: 'WHITE', wins: 0, movesCount: 0 },
+    ]);
+    setSoloBoard(createEmptyBoard());
+    setSoloTurn('BLACK');
+    setSoloHistory([]);
+    setSoloWinningLine([]);
+    setSoloRoundWinner(null);
+    setSoloIsDraw(false);
+    setSoloState('PLAYING');
+    showToast(`⚫ ${bName}(흑돌)님부터 착수해주세요!`, 'info');
+  };
 
-    return () => clearInterval(timer);
-  }, [gameState, currentPlayerIdx]);
+  const startNextSoloRound = () => {
+    const isSeriesOver = soloPlayers.some((p) => p.wins >= soloTargetWins);
+    setSoloPlayers((prev) =>
+      prev.map((p) => ({
+        ...p,
+        stone: p.stone === 'BLACK' ? 'WHITE' : 'BLACK',
+        wins: isSeriesOver ? 0 : p.wins,
+        movesCount: 0,
+      }))
+    );
+    setSoloBoard(createEmptyBoard());
+    setSoloTurn('BLACK');
+    setSoloHistory([]);
+    setSoloWinningLine([]);
+    setSoloRoundWinner(null);
+    setSoloIsDraw(false);
+    setSoloState('PLAYING');
+    showToast('🔄 흑과 백을 교대하여 새 대국을 시작합니다!', 'info');
+  };
 
-  const handleNextRoundOrFinish = () => {
-    const solventPlayers = players.filter((p) => p.chips > 0);
-    if (currentRound >= totalRounds || solventPlayers.length < 2) {
-      setGameState('GAME_OVER');
-      playVictoryFanfare();
-    } else {
-      startRound(currentRound + 1, players);
+  const handleSoloPlaceStone = (r: number, c: number) => {
+    if (soloState !== 'PLAYING' || soloBoard[r][c] !== null) return;
+
+    playSound('stone');
+    const nextBoard = soloBoard.map((rowArr) => [...rowArr]);
+    nextBoard[r][c] = soloTurn;
+
+    const updatedPlayers = soloPlayers.map((p) =>
+      p.stone === soloTurn ? { ...p, movesCount: p.movesCount + 1 } : p
+    );
+
+    const winLine = checkFiveInARow(nextBoard, r, c, soloTurn);
+    const draw = !winLine && isBoardFull(nextBoard);
+
+    setSoloBoard(nextBoard);
+    setSoloHistory((prev) => [...prev, { r, c }]);
+
+    if (winLine) {
+      playSound('win');
+      const finalPlayers = updatedPlayers.map((p) =>
+        p.stone === soloTurn ? { ...p, wins: p.wins + 1 } : p
+      );
+      const champ = finalPlayers.find((p) => p.stone === soloTurn)!;
+      setSoloPlayers(finalPlayers);
+      setSoloWinningLine(winLine);
+      setSoloRoundWinner(champ);
+      setSoloState('GAME_OVER');
+      speakKorean(`축하합니다! ${champ.name}님이 5목을 완성해 승리했습니다!`);
+
+      if (champ.wins >= soloTargetWins) {
+        saveHallOfFameRecord('SOLO', {
+          name: champ.name,
+          recordDetail: `${soloTargetWins}선승제 우승 (${champ.movesCount}수)`,
+        });
+      }
+      return;
     }
+
+    if (draw) {
+      setSoloPlayers(updatedPlayers);
+      setSoloIsDraw(true);
+      setSoloState('GAME_OVER');
+      showToast('🤝 무승부입니다!', 'info');
+      return;
+    }
+
+    setSoloPlayers(updatedPlayers);
+    setSoloTurn((prev) => (prev === 'BLACK' ? 'WHITE' : 'BLACK'));
   };
 
-  const currentPlayer = players[currentPlayerIdx];
-  const currentEval = currentPlayer ? evaluateHand(currentPlayer.hand) : null;
-  const callRequired = currentPlayer ? Math.max(0, highestBet - currentPlayer.currentBet) : 0;
+  const handleSoloUndo = () => {
+    if (soloState !== 'PLAYING' || soloHistory.length === 0) return;
+    playSound('undo');
 
-  const currentBackground =
-    gameState !== 'SETUP' && players.length > 0
-      ? PLAYER_BG_COLORS[currentPlayerIdx % PLAYER_BG_COLORS.length]
-      : PLAYER_BG_COLORS[0];
+    const lastCoord = soloHistory[soloHistory.length - 1];
+    const prevTurn: StoneColor = soloTurn === 'BLACK' ? 'WHITE' : 'BLACK';
 
-  const timePercentage = Math.max(0, Math.min(100, (timeLeftSec / turnLimitSec) * 100));
-  const isDangerTime = timeLeftSec <= 5;
+    const nextBoard = soloBoard.map((rowArr) => [...rowArr]);
+    nextBoard[lastCoord.r][lastCoord.c] = null;
 
-  const sortedFinalRankings = [...players].sort((a, b) => {
-    if (b.chips !== a.chips) return b.chips - a.chips;
-    return b.totalWins - a.totalWins;
-  });
+    setSoloBoard(nextBoard);
+    setSoloHistory((prev) => prev.slice(0, -1));
+    setSoloPlayers((prev) =>
+      prev.map((p) =>
+        p.stone === prevTurn ? { ...p, movesCount: Math.max(0, p.movesCount - 1) } : p
+      )
+    );
+    setSoloTurn(prevTurn);
+    showToast('↩️ 한 수 무르기를 했습니다.', 'info');
+  };
 
-  return (
-    <div className="poker-container" style={{ background: currentBackground }}>
-      {toast && (
-        <div key={toast.id} className={`poker-toast ${toast.type}`}>
-          {toast.text}
-        </div>
-      )}
+  // =========================================================
+  // 공통 바둑판 렌더링 헬퍼
+  // =========================================================
+  const renderOmokBoard = (
+    boardData: CellValue[][],
+    currentTurnColor: StoneColor,
+    lastMoveCoord: Coord | null,
+    winCoords: Coord[],
+    canInteract: boolean,
+    onCellClick: (r: number, c: number) => void
+  ) => {
+    const winSet = new Set(winCoords.map((coord) => `${coord.r},${coord.c}`));
 
-      {/* 1. 게임 설정 화면 */}
-      {gameState === 'SETUP' && (
-        <div className="setup-card">
-          <h1 className="setup-title">♠️ 5-Card Draw 포커 설정</h1>
+    return (
+      <div className="omok-grid-15x15">
+        {boardData.map((rowArr, r) =>
+          rowArr.map((cell, c) => {
+            const key = `${r},${c}`;
+            const isStar = STAR_POINTS.has(key);
+            const isLast = lastMoveCoord?.r === r && lastMoveCoord?.c === c;
+            const isWinStone = winSet.has(key);
+            const isPlayable = canInteract && cell === null;
 
-          <div className="setting-section">
-            <label className="setting-label">🏆 총 라운드(판 수) 선택</label>
-            <div className="option-grid-5">
-              {[1, 2, 3, 5, 7].map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  className={`option-btn ${totalRounds === num ? 'active' : ''}`}
-                  onClick={() => setTotalRounds(num)}
-                >
-                  {num}판
-                </button>
-              ))}
-            </div>
-          </div>
+            const edgeClasses = [
+              r === 0 ? 'edge-top' : '',
+              r === BOARD_SIZE - 1 ? 'edge-bottom' : '',
+              c === 0 ? 'edge-left' : '',
+              c === BOARD_SIZE - 1 ? 'edge-right' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
 
-          <div className="setting-section">
-            <label className="setting-label">🪙 시작 칩 & 기본 참가비(Ante)</label>
-            <div className="option-grid-3">
-              {[
-                { chips: 500, ante: 25, label: '500칩 (참가 25)' },
-                { chips: 1000, ante: 50, label: '1,000칩 (참가 50)' },
-                { chips: 3000, ante: 100, label: '3,000칩 (참가 100)' },
-              ].map((preset) => (
-                <button
-                  key={preset.chips}
-                  type="button"
-                  className={`option-btn ${startingChips === preset.chips ? 'active' : ''}`}
-                  onClick={() => {
-                    setStartingChips(preset.chips);
-                    setAnteAmount(preset.ante);
-                  }}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
+            return (
+              <div
+                key={key}
+                className={`omok-cell ${edgeClasses} ${isPlayable ? 'playable' : 'disabled'}`}
+                onClick={() => isPlayable && onCellClick(r, c)}
+              >
+                {isStar && cell === null && <span className="omok-star-point" />}
 
-          <div className="setting-section">
-            <label className="setting-label">⏱️ 한 턴 제한 시간 (초)</label>
-            <div className="time-input-wrapper">
-              <input
-                type="number"
-                min={5}
-                max={120}
-                className="time-input"
-                value={turnLimitSec}
-                onChange={(e) => setTurnLimitSec(Math.max(5, Number(e.target.value)))}
-              />
-              <span style={{ fontWeight: 600, color: '#475569' }}>
-                초 (초과 시 자동 체크/다이)
-              </span>
-            </div>
-          </div>
+                {isPlayable && (
+                  <div
+                    className={`omok-hover-ghost ${
+                      currentTurnColor === 'BLACK' ? 'black' : 'white'
+                    }`}
+                  />
+                )}
 
-          <div className="setting-section">
-            <label className="setting-label">👥 참가자 등록 (2 ~ 6명)</label>
-            <div className="input-group">
-              <input
-                type="text"
-                className="player-input"
-                placeholder="플레이어 이름 입력"
-                value={inputName}
-                onChange={(e) => setInputName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addPlayer()}
-              />
-              <button className="btn btn-primary" onClick={addPlayer} disabled={players.length >= 6}>
-                ➕ 추가
-              </button>
-            </div>
+                {cell !== null && (
+                  <div
+                    className={`omok-stone ${cell === 'BLACK' ? 'black' : 'white'} ${
+                      isLast ? 'last-move' : ''
+                    } ${isWinStone ? 'winning-stone' : ''}`}
+                  />
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  };
 
-            <div className="player-list">
-              {players.map((player) => (
-                <div key={player.id} className="player-item">
-                  <span>👤 {player.name}</span>
-                  <button className="btn-delete" onClick={() => removePlayer(player.id)}>
-                    🗑️
-                  </button>
-                </div>
-              ))}
-            </div>
+  // =========================================================
+  // 1. 홈 화면
+  // =========================================================
+  if (appMode === 'HOME') {
+    return (
+      <div className="omok-container" style={{ background: TURN_BG_COLORS.BLACK }}>
+        <div className="setup-card home-entry-card">
+          <div className="home-castle-icon">⚫⚪</div>
+          <h1 className="setup-title">전통 오목 대전 (15×15)</h1>
+          <p className="home-subtitle">가로 · 세로 · 대각선 5목을 먼저 완성하여 승리하세요!</p>
+
+          <div className="mode-select-grid">
+            <button
+              type="button"
+              className="mode-select-btn solo"
+              onClick={() => {
+                setSoloState('SETUP');
+                setAppMode('SOLO');
+              }}
+            >
+              <span className="mode-icon">🎮</span>
+              <strong>단독게임</strong>
+              <span className="mode-desc">한 기기에서 흑과 백 2인 대국 (무르기 지원)</span>
+            </button>
+
+            <button
+              type="button"
+              className="mode-select-btn net"
+              onClick={() => setAppMode('NET_LOBBY')}
+            >
+              <span className="mode-icon">🌐</span>
+              <strong>넷게임</strong>
+              <span className="mode-desc">온라인 4개 대국실 실시간 대전 & 관망모드</span>
+            </button>
           </div>
 
           <button
-            className="btn btn-success"
-            disabled={players.length < 2}
-            onClick={goToMainReady}
+            type="button"
+            className="btn btn-secondary"
+            style={{ marginTop: '14px', width: '100%' }}
+            onClick={() => setAppMode('HALL_OF_FAME')}
           >
-            ➡️ 순서 정하기 ({players.length}명)
+            🏅 명예의 전당 보기
           </button>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {/* 2. 순서 결정 화면 */}
-      {gameState === 'READY' && (
-        <div className="order-panel">
-          <div className="order-header">
-            <h3 style={{ margin: 0, fontSize: '18px' }}>📋 베팅 순서를 정해주세요</h3>
+  // =========================================================
+  // 2. 명예의 전당
+  // =========================================================
+  if (appMode === 'HALL_OF_FAME') {
+    const soloRecords = getHallOfFameRecords('SOLO');
+    const netRecords = getHallOfFameRecords('NET');
+
+    return (
+      <div className="omok-container" style={{ background: TURN_BG_COLORS.BLACK, padding: '16px' }}>
+        <div className="setup-card" style={{ maxWidth: '600px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <button
+              type="button"
               className="btn btn-secondary"
-              style={{ padding: '6px 12px', fontSize: '13px' }}
-              onClick={shufflePlayersOrder}
+              onClick={() => setAppMode('HOME')}
             >
-              🎲 순서 랜덤 섞기
+              ⬅️ 홈으로
             </button>
+            <h2 style={{ margin: 0, color: '#0f172a' }}>🏅 오목 명예의 전당</h2>
+            <div style={{ width: '60px' }} />
           </div>
 
-          <div className="order-list">
-            {players.map((player, idx) => (
-              <div key={player.id} className="order-item">
-                <span>
-                  <strong style={{ color: '#2563eb', marginRight: '8px' }}>{idx + 1}번</strong>
-                  {player.name} ({player.chips.toLocaleString()}칩)
-                </span>
-                <div className="order-controls">
-                  <button
-                    className="order-btn"
-                    disabled={idx === 0}
-                    onClick={() => movePlayerOrder(idx, 'UP')}
-                  >
-                    ▲
-                  </button>
-                  <button
-                    className="order-btn"
-                    disabled={idx === players.length - 1}
-                    onClick={() => movePlayerOrder(idx, 'DOWN')}
-                  >
-                    ▼
-                  </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '15px', color: '#1e3a8a', textAlign: 'center' }}>
+                🎮 단독 대국 TOP 10
+              </h3>
+              {soloRecords.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#64748b', fontSize: '13px' }}>기록이 없습니다.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {soloRecords.map((rec, i) => (
+                    <div key={rec.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', background: '#fff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                      <span><strong>{i + 1}. {rec.name}</strong></span>
+                      <span style={{ color: '#059669' }}>{rec.recordDetail}</span>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
+              )}
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '15px', color: '#b45309', textAlign: 'center' }}>
+                🌐 넷대국 TOP 10
+              </h3>
+              {netRecords.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#64748b', fontSize: '13px' }}>기록이 없습니다.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {netRecords.map((rec, i) => (
+                    <div key={rec.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', background: '#fff', padding: '6px 8px', borderRadius: '6px', border: '1px solid #f1f5f9' }}>
+                      <span><strong>{i + 1}. {rec.name}</strong></span>
+                      <span style={{ color: '#d97706' }}>{rec.recordDetail}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // 3. 넷게임 로비 (방 4개)
+  // =========================================================
+  if (appMode === 'NET_LOBBY') {
+    return (
+      <div className="omok-container" style={{ background: TURN_BG_COLORS.BLACK }}>
+        <div className="net-lobby-container">
+          <div className="net-lobby-header">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setAppMode('HOME')}
+            >
+              ⬅️ 홈으로
+            </button>
+            <h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a' }}>
+              🌐 온라인 오목 대국실
+            </h2>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ fontSize: '12px' }}
+              onClick={() => setAppMode('HALL_OF_FAME')}
+            >
+              🏅 명예의전당
+            </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={() => setGameState('SETUP')}>
-              ⚙️ 설정
-            </button>
-            <button
-              className="btn btn-success"
-              onClick={() => startRound(1, players)}
-            >
-              🃏 1라운드 카드 돌리기!
+          <div className="net-rooms-grid">
+            {rooms.map((room) => {
+              const roomPlayers = room.players || [];
+              const roomWaitlist = room.waitlist || [];
+              const roomSpectators = room.spectators || [];
+              const isEmpty = room.status === 'EMPTY' || roomPlayers.length === 0;
+              const isWaiting = room.status === 'WAITING' && roomPlayers.length > 0;
+              const isPlaying = room.status === 'PLAYING' || room.status === 'ROUND_OVER';
+              const isFull = roomPlayers.length >= 2;
+
+              let statusBadgeText = '🟢 빈 대국실';
+              let statusClass = 'empty';
+              if (isPlaying) {
+                statusBadgeText = `🔥 대국중 (제 ${room.round}국)`;
+                statusClass = 'playing';
+              } else if (isWaiting) {
+                statusBadgeText = isFull
+                  ? '🟠 대국 준비 완료 (2/2)'
+                  : `🟡 도전자 대기중 (${roomPlayers.length}/2명)`;
+                statusClass = 'waiting';
+              }
+
+              return (
+                <div
+                  key={room.roomId}
+                  className={`net-room-card ${statusClass}`}
+                  onClick={() => {
+                    if (
+                      roomPlayers.some((p) => p.id === mySessionId) ||
+                      roomWaitlist.some((w) => w.id === mySessionId) ||
+                      roomSpectators.some((s) => s.id === mySessionId)
+                    ) {
+                      setSelectedRoomId(room.roomId);
+                      setAppMode('NET_ROOM');
+                    } else {
+                      setJoinModalRoom(room);
+                      setJoinPlayerName('');
+                    }
+                  }}
+                >
+                  <div className="room-card-top">
+                    <span className="room-number-title">⚫ 제 {room.roomId} 대국실</span>
+                    <span className={`room-status-pill ${statusClass}`}>{statusBadgeText}</span>
+                  </div>
+
+                  <div className="room-rules-info">
+                    <span>🏆 승리 조건: {room.targetWins}선승제</span>
+                    <span>⏱️ 수당 제한시간: {room.baseTimeout}초</span>
+                  </div>
+
+                  <div className="room-members-box">
+                    <div className="room-members-label">대국자 ({roomPlayers.length}/2):</div>
+                    <div className="room-members-chips">
+                      {roomPlayers.length === 0 ? (
+                        <span className="empty-member-text">첫 번째 대국자를 기다리고 있습니다</span>
+                      ) : (
+                        roomPlayers.map((p, idx) => (
+                          <span key={p.id} className="member-chip">
+                            <span
+                              className={`stone-badge-icon mini ${
+                                idx === 0 ? 'black' : 'white'
+                              }`}
+                            />
+                            {p.name} ({p.wins}승)
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {roomSpectators.length > 0 && (
+                    <div className="room-waitlist-box" style={{ color: '#0369a1', background: '#f0f9ff' }}>
+                      👀 관망 중 ({roomSpectators.length}명): {roomSpectators.map((s) => s.name).join(', ')}
+                    </div>
+                  )}
+
+                  {roomWaitlist.length > 0 && (
+                    <div className="room-waitlist-box">
+                      ⏳ 다음 판 도전 예약 ({roomWaitlist.length}명):{' '}
+                      {roomWaitlist.map((w) => w.name).join(', ')}
+                    </div>
+                  )}
+
+                  <div className="room-enter-cta">
+                    {isEmpty
+                      ? '👉 클릭하여 방 만들기 또는 관망하기'
+                      : isPlaying || isFull
+                      ? '👉 클릭하여 도전자 예약 또는 관망하기'
+                      : '👉 클릭하여 대국 참가 또는 관망하기'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {joinModalRoom && (
+          <div className="modal-overlay" onClick={() => setJoinModalRoom(null)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <h2 style={{ margin: '0 0 8px' }}>⚫ 제 {joinModalRoom.roomId} 대국실 입장</h2>
+              <p className="modal-subtext">
+                이름을 입력하고 대국에 참가하거나, 대국을 구경하는 <strong>관망모드</strong>를 선택하세요!
+              </p>
+
+              <input
+                type="text"
+                className="player-input"
+                style={{ width: '100%', boxSizing: 'border-box', marginBottom: '14px' }}
+                placeholder="내 이름 입력 (예: 이세돌)"
+                value={joinPlayerName}
+                autoFocus
+                onChange={(e) => setJoinPlayerName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleEnterRoomSubmit(false)}
+              />
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1, background: '#0284c7', color: '#fff' }}
+                  onClick={() => handleEnterRoomSubmit(true)}
+                >
+                  👀 관망하기
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  style={{ flex: 2 }}
+                  onClick={() => handleEnterRoomSubmit(false)}
+                >
+                  🚀 대국 참가 / 예약
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // =========================================================
+  // 4. 넷게임 대국실
+  // =========================================================
+  if (appMode === 'NET_ROOM') {
+    if (!activeNetRoom) {
+      return (
+        <div className="omok-container" style={{ background: TURN_BG_COLORS.BLACK, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="setup-card" style={{ textAlign: 'center' }}>
+            <h2>⏳ 대국실 정보를 불러오는 중입니다...</h2>
+            <button type="button" className="btn btn-secondary" style={{ marginTop: '12px' }} onClick={() => setAppMode('NET_LOBBY')}>
+              ⬅️ 로비로 돌아가기
             </button>
           </div>
         </div>
-      )}
+      );
+    }
 
-      {/* 3. 플레이 진행 화면 */}
-      {gameState !== 'SETUP' && gameState !== 'READY' && (
-        <>
-          <div className="game-header">
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span className="level-badge">
-                🎰 Round {currentRound} / {totalRounds}
-              </span>
-              <span className="pot-badge">
-                💰 POT: {pot.toLocaleString()}칩
+    const roomPlayers = activeNetRoom.players || [];
+    const roomWaitlist = activeNetRoom.waitlist || [];
+    const roomSpectators = activeNetRoom.spectators || [];
+    const isHost = roomPlayers[0]?.id === mySessionId;
+    const amIWaitlisted = roomWaitlist.some((w) => w.id === mySessionId);
+    const amISpectator = roomSpectators.some((s) => s.id === mySessionId);
+
+    if (activeNetRoom.status === 'WAITING' || activeNetRoom.status === 'EMPTY') {
+      const minutes = Math.floor(waitingCountdownSec / 60);
+      const seconds = waitingCountdownSec % 60;
+      const countdownStr = `${minutes}분 ${seconds < 10 ? '0' : ''}${seconds}초`;
+
+      return (
+        <div className="omok-container" style={{ background: TURN_BG_COLORS.BLACK }}>
+          <div className="setup-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+                onClick={handleLeaveNetRoom}
+              >
+                🚪 방 나가기
+              </button>
+              <span className="room-status-pill waiting">
+                제 {activeNetRoom.roomId}실 · 대기 중 (⏱️ {countdownStr})
               </span>
             </div>
 
-            <div className="score-board">
-              {players.map((p, idx) => (
-                <div
-                  key={p.id}
-                  className={`score-card ${idx === currentPlayerIdx && gameState !== 'SHOWDOWN' ? 'active' : ''} ${p.folded ? 'folded' : ''}`}
-                >
-                  <div className="score-name">
-                    <span>
-                      {idx === currentPlayerIdx && gameState !== 'SHOWDOWN' ? '👉 ' : ''}
-                      {p.name} {p.folded ? '(다이)' : ''}
+            <h1 className="setup-title" style={{ marginTop: '14px' }}>
+              ⚫⚪ 오목 대국 대기실 {amISpectator ? '👀 [관망모드]' : ''}
+            </h1>
+
+            <div className="setting-section">
+              <label className="setting-label">
+                🏆 승리 조건 {isHost ? '(방장 설정 가능)' : '(방장이 설정 중)'}
+              </label>
+              <div className="piece-count-selector">
+                {[1, 2, 3].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    disabled={!isHost}
+                    className={`count-btn ${activeNetRoom.targetWins === num ? 'active' : ''}`}
+                    onClick={() => updateNetRoomSettings(num, activeNetRoom.baseTimeout)}
+                  >
+                    {num === 1 ? '단판 승부' : `${num * 2 - 1}판 ${num}선승`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="setting-section">
+              <label className="setting-label">
+                ⏱️ 한 수 제한시간: <strong>{activeNetRoom.baseTimeout}초</strong>
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700 }}>15초</span>
+                <input
+                  type="range"
+                  min={15}
+                  max={60}
+                  step={5}
+                  disabled={!isHost}
+                  value={activeNetRoom.baseTimeout}
+                  style={{ flex: 1 }}
+                  onChange={(e) =>
+                    updateNetRoomSettings(activeNetRoom.targetWins, Number(e.target.value))
+                  }
+                />
+                <span style={{ fontSize: '12px', fontWeight: 700 }}>60초</span>
+              </div>
+            </div>
+
+            <div className="setting-section">
+              <label className="setting-label">⚔️ 대국자 명단 (2명)</label>
+              <div className="player-list">
+                {roomPlayers.map((p, idx) => (
+                  <div key={p.id} className="player-item">
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className={`stone-badge-icon ${idx === 0 ? 'black' : 'white'}`} />
+                      {p.name} ({idx === 0 ? '흑돌·선공' : '백돌·후공'}) {p.id === mySessionId && '(나)'}
                     </span>
+                    <span style={{ fontSize: '12px', color: '#059669' }}>준비완료</span>
                   </div>
-                  <div className="score-val">{p.chips.toLocaleString()}칩</div>
-                  {p.currentBet > 0 && !p.folded && (
-                    <div className="bet-tag">베팅: {p.currentBet}</div>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
-            <button className="btn btn-primary" onClick={() => setGameState('SETUP')}>
-              ⚙️ 설정
+            <button
+              type="button"
+              className="btn btn-success"
+              disabled={roomPlayers.length < 2}
+              onClick={handleStartNetGame}
+            >
+              🚀 대국 시작하기 ({roomPlayers.length}/2명)
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    let netBoard: CellValue[][] = createEmptyBoard();
+    try {
+      netBoard = JSON.parse(activeNetRoom.boardFlat);
+    } catch {
+      netBoard = createEmptyBoard();
+    }
+
+    const currentTurnPlayer = roomPlayers.find((p) => p.stone === activeNetRoom.currentTurn);
+    const isMyTurn =
+      activeNetRoom.status === 'PLAYING' &&
+      currentTurnPlayer?.id === mySessionId &&
+      !amISpectator;
+
+    const roundWinner = roomPlayers.find((p) => p.id === activeNetRoom.roundWinnerId);
+    const matchChampion = roomPlayers.find((p) => p.wins >= activeNetRoom.targetWins);
+
+    return (
+      <div
+        className="omok-container"
+        style={{ background: TURN_BG_COLORS[activeNetRoom.currentTurn] }}
+      >
+        {toast && (
+          <div key={toast.id} className={`omok-toast ${toast.type}`}>
+            {toast.text}
+          </div>
+        )}
+
+        <div className="play-wrapper compact-tablet-mode">
+          <div className="game-header compact-header">
+            <div className="net-level-timer-box">
+              <span className="net-level-badge">
+                제{activeNetRoom.round}국 ({activeNetRoom.targetWins}선승)
+              </span>
+              <span className={`net-timer-badge ${remainingSeconds <= 7 ? 'urgent' : ''}`}>
+                ⏱️ {remainingSeconds}초
+              </span>
+            </div>
+
+            <div className="player-status-bar">
+              {roomPlayers.map((p) => {
+                const isActive =
+                  activeNetRoom.status === 'PLAYING' && p.stone === activeNetRoom.currentTurn;
+                return (
+                  <div
+                    key={p.id}
+                    className={`player-badge-card ${isActive ? 'active' : ''}`}
+                    style={{ borderColor: isActive ? '#d97706' : 'transparent' }}
+                  >
+                    <div className="player-badge-top">
+                      <span
+                        className={`stone-badge-icon mini ${
+                          p.stone === 'BLACK' ? 'black' : 'white'
+                        }`}
+                      />
+                      <strong>
+                        {p.name}
+                        {p.id === mySessionId ? '(나)' : ''}
+                      </strong>
+                      <span className="badge-score">{p.wins}승</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-compact-setup"
+              onClick={handleLeaveNetRoom}
+              title="대국실 나가기"
+            >
+              🚪
             </button>
           </div>
 
-          {/* 패스 앤 플레이 가림막 (다른 사람 패 훔쳐보기 방지) */}
-          {gameState === 'PASS_SCREEN' && currentPlayer && (
-            <div className="pass-curtain">
-              <div className="pass-icon">🙈</div>
-              <h2>
-                <span style={{ color: '#2563eb' }}>{currentPlayer.name}</span>님의 차례입니다!
-              </h2>
-              <p className="pass-desc">
-                현재 단계:{' '}
-                <strong>
-                  {nextPhaseAfterPass === 'BETTING_1' && '1차 베팅'}
-                  {nextPhaseAfterPass === 'DRAW' && '카드 교체 (Draw)'}
-                  {nextPhaseAfterPass === 'BETTING_2' && '최종 베팅'}
-                </strong>
-                <br />
-                다른 플레이어가 화면을 보지 않을 때 아래 버튼을 눌러주세요.
-              </p>
-              <button
-                className="btn btn-success"
-                style={{ maxWidth: '320px', margin: '0 auto' }}
-                onClick={() => setGameState(nextPhaseAfterPass)}
-              >
-                👀 내 카드 확인하기
-              </button>
+          {amISpectator && (
+            <div className="net-waitlist-strip" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+              👀 현재 관망모드 중입니다. 실시간 대국을 관전하고 있습니다!
             </div>
           )}
 
-          {/* 실제 턴 진행 화면 (1차 베팅 / 카드 교체 / 2차 베팅) */}
-          {(gameState === 'BETTING_1' || gameState === 'DRAW' || gameState === 'BETTING_2') &&
-            currentPlayer && (
-              <div className="table-area">
-                <div className={`timer-container ${isDangerTime ? 'warning-flash' : ''}`}>
-                  <div className="timer-info">
-                    <span>
-                      단계:{' '}
-                      <strong style={{ color: '#4f46e5' }}>
-                        {gameState === 'BETTING_1' && '1️⃣ 1차 베팅'}
-                        {gameState === 'DRAW' && '2️⃣ 카드 교체 (바꿀 카드를 터치하세요)'}
-                        {gameState === 'BETTING_2' && '3️⃣ 최종 베팅'}
-                      </strong>
-                    </span>
-                    <span className={isDangerTime ? 'timer-text-danger' : ''}>
-                      {isDangerTime ? '🚨 서두르세요! ' : '남은 시간: '}
-                      {timeLeftSec}초
-                    </span>
-                  </div>
-                  <div className="timer-bar-bg">
-                    <div
-                      className={`timer-bar-fill ${isDangerTime ? 'danger' : ''}`}
-                      style={{ width: `${timePercentage}%` }}
-                    />
-                  </div>
-                </div>
+          {(amIWaitlisted || roomWaitlist.length > 0) && !amISpectator && (
+            <div className="net-waitlist-strip">
+              {amIWaitlisted
+                ? '⏳ 다음 판 도전자로 예약되어 있습니다! 현재 매치가 끝나면 자동 출전합니다.'
+                : `⏳ 다음 판 대기 도전자 (${roomWaitlist.length}명): ${roomWaitlist
+                    .map((w) => w.name)
+                    .join(', ')}`}
+            </div>
+          )}
 
-                {/* 현재 내 족보 실시간 안내 */}
-                <div className="hand-status-bar">
-                  <span className="player-turn-label">🎴 {currentPlayer.name}님의 패</span>
-                  <span className="hand-rank-pill">{currentEval?.name}</span>
-                </div>
+          <div className="omok-board-outer">
+            <div className="omok-board-crest">
+              {activeNetRoom.lastActionNotice ||
+                `⚜️ 제 ${activeNetRoom.roomId} 대국실 · 제 ${activeNetRoom.round}국 ⚜️`}
+            </div>
 
-                {/* 5장의 포커 카드 */}
-                <div className="hand-grid">
-                  {currentPlayer.hand.map((card, idx) => {
-                    const isRed = card.suit === '♥' || card.suit === '♦';
-                    const isSelected = selectedDiscardIndices.includes(idx);
-
-                    return (
-                      <div
-                        key={card.id}
-                        className={`poker-card ${isRed ? 'red' : 'black'} ${isSelected ? 'selected-discard' : ''}`}
-                        onClick={() => toggleDiscardCard(idx)}
-                      >
-                        {isSelected && <div className="discard-badge">교체</div>}
-                        <div className="card-corner top">
-                          <span>{card.label}</span>
-                          <span>{card.suit}</span>
-                        </div>
-                        <div className="card-center-suit">{card.suit}</div>
-                        <div className="card-corner bottom">
-                          <span>{card.label}</span>
-                          <span>{card.suit}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 단계별 컨트롤 버튼 */}
-                {(gameState === 'BETTING_1' || gameState === 'BETTING_2') && (
-                  <div className="action-panel">
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => handleBetAction('FOLD')}
-                    >
-                      🏳️ 다이 (Fold)
-                    </button>
-
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handleBetAction('CHECK_CALL')}
-                    >
-                      {callRequired === 0
-                        ? '✅ 체크 (0칩)'
-                        : `📞 콜 (${Math.min(currentPlayer.chips, callRequired)}칩)`}
-                    </button>
-
-                    <button
-                      className="btn btn-warning"
-                      disabled={currentPlayer.chips <= callRequired}
-                      onClick={() => handleBetAction('RAISE', anteAmount)}
-                    >
-                      🔥 레이즈 (+{anteAmount}칩)
-                    </button>
-
-                    <button
-                      className="btn btn-dark"
-                      disabled={currentPlayer.chips <= callRequired + anteAmount}
-                      onClick={() => handleBetAction('RAISE', anteAmount * 3)}
-                    >
-                      💥 빅 레이즈 (+{anteAmount * 3}칩)
-                    </button>
-                  </div>
-                )}
-
-                {gameState === 'DRAW' && (
-                  <div className="action-panel">
-                    <button
-                      className="btn btn-success"
-                      style={{ maxWidth: '360px' }}
-                      onClick={confirmDrawCards}
-                    >
-                      {selectedDiscardIndices.length === 0
-                        ? '🛡️ 카드 바꾸지 않고 유지 (Stay)'
-                        : `🔄 선택한 ${selectedDiscardIndices.length}장 카드 교체하기`}
-                    </button>
-                  </div>
-                )}
-              </div>
+            {renderOmokBoard(
+              netBoard,
+              activeNetRoom.currentTurn,
+              activeNetRoom.lastMove,
+              activeNetRoom.winningLine || [],
+              isMyTurn,
+              handleNetPlaceStone
             )}
+          </div>
 
-          {/* 4. 쇼다운 (라운드 결과 공개) 화면 */}
-          {gameState === 'SHOWDOWN' && (
-            <div className="showdown-panel">
-              <div className="modal-trophy">🏆</div>
-              <h2 style={{ margin: '0 0 6px' }}>
-                {roundWinners.map((w) => w.player.name).join(', ')}님 라운드 승리!
+          <div className="omok-bottom-dock">
+            <div className="turn-status-group">
+              <span
+                className={`stone-badge-icon ${
+                  activeNetRoom.currentTurn === 'BLACK' ? 'black' : 'white'
+                }`}
+              />
+              <span>
+                {currentTurnPlayer?.name || ''}
+                {isMyTurn ? ' (내 차례 · 착수하세요!)' : ' (착수 대기 중)'}
+              </span>
+            </div>
+
+            <span className="move-count-pill">
+              총 {(roomPlayers[0]?.movesCount || 0) + (roomPlayers[1]?.movesCount || 0)}수 진행
+            </span>
+          </div>
+        </div>
+
+        {activeNetRoom.status === 'ROUND_OVER' && (
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <div className="modal-trophy">{activeNetRoom.isDraw ? '🤝' : '👑🏆👑'}</div>
+              <div className="congrats-banner">
+                {matchChampion ? 'FINAL CHAMPION!' : `제 ${activeNetRoom.round}국 종료!`}
+              </div>
+              <h2 style={{ margin: '6px 0 8px', color: '#0f172a' }}>
+                {activeNetRoom.isDraw
+                  ? '무승부입니다!'
+                  : matchChampion
+                  ? `${matchChampion.name}님 최종 우승! 🌟`
+                  : `${roundWinner?.name || ''}님 1승 획득!`}
               </h2>
-              <p style={{ color: '#475569', marginBottom: '18px', fontWeight: 600 }}>
-                승리 족보: <strong style={{ color: '#2563eb' }}>{roundWinners[0]?.evalResult.name}</strong> (팟 {pot.toLocaleString()}칩 획득)
-              </p>
 
-              <div className="showdown-list">
-                {players.map((p) => {
-                  const ev = evaluateHand(p.hand);
-                  const isWinner = roundWinners.some((w) => w.player.id === p.id);
-
+              <div className="rank-list">
+                {roomPlayers.map((p) => {
+                  const isChamp = p.id === activeNetRoom.roundWinnerId;
                   return (
-                    <div
-                      key={p.id}
-                      className={`showdown-row ${isWinner ? 'winner' : ''} ${p.folded ? 'folded' : ''}`}
-                    >
-                      <div className="showdown-player-info">
-                        <strong>
-                          {isWinner ? '👑 ' : ''}
-                          {p.name}
-                        </strong>
-                        <span className="showdown-rank-text">
-                          {p.folded ? '🏳️ 다이 (기권)' : ev.name}
-                        </span>
-                      </div>
-
-                      <div className="mini-hand">
-                        {p.hand.map((c) => {
-                          const isRed = c.suit === '♥' || c.suit === '♦';
-                          return (
-                            <span
-                              key={c.id}
-                              className={`mini-card ${isRed ? 'red' : 'black'}`}
-                            >
-                              {c.suit}
-                              {c.label}
-                            </span>
-                          );
-                        })}
-                      </div>
+                    <div key={p.id} className={`rank-item ${isChamp ? 'winner' : ''}`}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          className={`stone-badge-icon mini ${
+                            p.stone === 'BLACK' ? 'black' : 'white'
+                          }`}
+                        />
+                        {isChamp ? '🥇 ' : ''}
+                        {p.name}
+                      </span>
+                      <span>
+                        누적 {p.wins}승 / {activeNetRoom.targetWins}승 ({p.movesCount}수)
+                      </span>
                     </div>
                   );
                 })}
               </div>
 
-              <button
-                className="btn btn-success"
-                style={{ marginTop: '18px' }}
-                onClick={handleNextRoundOrFinish}
-              >
-                {currentRound >= totalRounds || players.filter((p) => p.chips > 0).length < 2
-                  ? '👑 최종 우승 결과 보기'
-                  : `🚀 Round ${currentRound + 1} 시작하기`}
-              </button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={handleLeaveNetRoom}
+                >
+                  🚪 나가기
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  style={{ flex: 2 }}
+                  onClick={handleNextNetRound}
+                >
+                  {matchChampion
+                    ? roomWaitlist.length > 0
+                      ? '⚔️ 다음 도전자와 대국 시작'
+                      : '🔄 흑/백 교대 재대결'
+                    : `🔥 제 ${activeNetRoom.round + 1}국 시작하기`}
+                </button>
+              </div>
             </div>
-          )}
-        </>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // =========================================================
+  // 5. 단독게임 (설정 / 대국 / 결과)
+  // =========================================================
+  const currentSoloPlayer = soloPlayers.find((p) => p.stone === soloTurn)!;
+  const lastSoloMove = soloHistory.length > 0 ? soloHistory[soloHistory.length - 1] : null;
+  const isSoloSeriesOver = soloPlayers.some((p) => p.wins >= soloTargetWins);
+
+  return (
+    <div
+      className="omok-container"
+      style={{ background: soloState === 'PLAYING' ? TURN_BG_COLORS[soloTurn] : TURN_BG_COLORS.BLACK }}
+    >
+      {toast && soloState === 'PLAYING' && (
+        <div key={toast.id} className={`omok-toast ${toast.type}`}>
+          {toast.text}
+        </div>
       )}
 
-      {/* 5. 최종 게임 종료 축하 모달 */}
-      {gameState === 'GAME_OVER' && (
-        <div className="modal-overlay">
-          <div className="confetti-layer">
-            {Array.from({ length: 45 }).map((_, i) => (
-              <div
-                key={i}
-                className="confetti-piece"
-                style={{
-                  left: `${(i * 2.3) % 100}%`,
-                  backgroundColor: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-                  animationDuration: `${2.2 + (i % 5) * 0.45}s`,
-                  animationDelay: `${(i % 7) * 0.15}s`,
-                }}
-              />
-            ))}
+      {soloState === 'SETUP' && (
+        <div className="setup-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+              onClick={() => setAppMode('HOME')}
+            >
+              ⬅️ 홈으로
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '12px' }}
+              onClick={() => setAppMode('HALL_OF_FAME')}
+            >
+              🏅 명예의 전당
+            </button>
           </div>
+          <h1 className="setup-title">⚫⚪ 오목 대국 설정 (단독게임)</h1>
 
-          <div className="modal-content grand-finale">
-            <div className="modal-trophy">👑🏆👑</div>
-            <div className="congrats-banner">✨ POKER CHAMPION! ✨</div>
-            <h2 style={{ margin: '4px 0 8px', color: '#0f172a' }}>최종 순위 발표</h2>
-            <p className="modal-subtext">보유 칩 기준 최종 랭킹입니다!</p>
-
-            <div className="rank-list">
-              {sortedFinalRankings.map((p, rank) => (
-                <div key={p.id} className={`rank-item ${rank === 0 ? 'winner' : ''}`}>
-                  <span>
-                    {rank === 0 ? '🥇 👑 ' : `${rank + 1}위 `} {p.name}
-                  </span>
-                  <span style={{ fontSize: '14px', fontWeight: 800 }}>
-                    🪙 {p.chips.toLocaleString()}칩 ({p.totalWins}승)
-                  </span>
-                </div>
+          <div className="setting-section">
+            <label className="setting-label">🏆 목표 승수 설정</label>
+            <div className="piece-count-selector">
+              {[1, 2, 3].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  className={`count-btn ${soloTargetWins === num ? 'active' : ''}`}
+                  onClick={() => setSoloTargetWins(num)}
+                >
+                  {num === 1 ? '단판 승부' : `${num * 2 - 1}판 ${num}선승`}
+                </button>
               ))}
             </div>
+          </div>
 
-            <button className="btn btn-success" onClick={goToMainReady}>
-              🔄 새 게임 시작하기
+          <div className="setting-section">
+            <label className="setting-label">⚔️ 대국자 이름 입력</label>
+            <div className="player-list">
+              <div className="player-item">
+                <span className="stone-badge-icon black" />
+                <span style={{ minWidth: '64px', fontSize: '13px' }}>흑돌(선공)</span>
+                <input
+                  type="text"
+                  className="player-input"
+                  value={blackName}
+                  placeholder="흑돌 플레이어 이름"
+                  onChange={(e) => setBlackName(e.target.value)}
+                />
+              </div>
+
+              <div className="player-item">
+                <span className="stone-badge-icon white" />
+                <span style={{ minWidth: '64px', fontSize: '13px' }}>백돌(후공)</span>
+                <input
+                  type="text"
+                  className="player-input"
+                  value={whiteName}
+                  placeholder="백돌 플레이어 이름"
+                  onChange={(e) => setWhiteName(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rule-summary-box">
+            <strong>📜 대국 안내:</strong>
+            <ul>
+              <li>15×15 오목판에서 흑돌이 먼저 착수합니다.</li>
+              <li>가로, 세로, 대각선 방향으로 같은 색 돌 5개를 먼저 연결하면 승리합니다.</li>
+              <li>실수했을 경우 하단의 <strong>[↩️ 한 수 무르기]</strong> 버튼을 사용할 수 있습니다.</li>
+            </ul>
+          </div>
+
+          <button type="button" className="btn btn-success" onClick={startSoloGame}>
+            🚀 대국 시작하기!
+          </button>
+        </div>
+      )}
+
+      {soloState === 'PLAYING' && (
+        <div className="play-wrapper compact-tablet-mode">
+          <div className="game-header compact-header">
+            <div className="player-status-bar">
+              {soloPlayers.map((p) => {
+                const isActive = p.stone === soloTurn;
+                return (
+                  <div
+                    key={p.id}
+                    className={`player-badge-card ${isActive ? 'active' : ''}`}
+                    style={{ borderColor: isActive ? '#d97706' : 'transparent' }}
+                  >
+                    <div className="player-badge-top">
+                      <span
+                        className={`stone-badge-icon mini ${
+                          p.stone === 'BLACK' ? 'black' : 'white'
+                        }`}
+                      />
+                      <strong>{p.name}</strong>
+                      <span className="badge-score">
+                        {p.wins}/{soloTargetWins}승
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-compact-setup"
+              onClick={() => setSoloState('SETUP')}
+              title="설정으로 돌아가기"
+            >
+              🚪
             </button>
+          </div>
+
+          <div className="omok-board-outer">
+            <div className="omok-board-crest">
+              ⚜️ 전통 15×15 오목판 · 5목을 먼저 완성하세요 ⚜️
+            </div>
+
+            {renderOmokBoard(
+              soloBoard,
+              soloTurn,
+              lastSoloMove,
+              soloWinningLine,
+              true,
+              handleSoloPlaceStone
+            )}
+          </div>
+
+          <div className="omok-bottom-dock">
+            <div className="turn-status-group">
+              <span
+                className={`stone-badge-icon ${soloTurn === 'BLACK' ? 'black' : 'white'}`}
+              />
+              <span>
+                {currentSoloPlayer.name} ({soloTurn === 'BLACK' ? '흑돌' : '백돌'}) 차례
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="move-count-pill">총 {soloHistory.length}수</span>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+                disabled={soloHistory.length === 0}
+                onClick={handleSoloUndo}
+              >
+                ↩️ 한 수 무르기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {soloState === 'GAME_OVER' && (
+        <div className="modal-overlay">
+          {!soloIsDraw && (
+            <div className="confetti-layer">
+              {Array.from({ length: 45 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="confetti-piece"
+                  style={{
+                    left: `${(i * 2.3) % 100}%`,
+                    backgroundColor: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+                    animationDuration: `${2.2 + (i % 5) * 0.45}s`,
+                    animationDelay: `${(i % 7) * 0.15}s`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="modal-content">
+            <div className="modal-trophy">{soloIsDraw ? '🤝' : '👑🏆👑'}</div>
+            <div className="congrats-banner">
+              {soloIsDraw
+                ? 'DRAW GAME'
+                : isSoloSeriesOver
+                ? '✨ CHAMPION VICTORY! ✨'
+                : 'ROUND VICTORY!'}
+            </div>
+            <h2 style={{ margin: '6px 0 8px', color: '#0f172a' }}>
+              {soloIsDraw
+                ? '무승부입니다!'
+                : isSoloSeriesOver
+                ? `${soloRoundWinner?.name}님 최종 우승! 🌟`
+                : `${soloRoundWinner?.name}님 승리!`}
+            </h2>
+            <p className="modal-subtext">
+              {soloIsDraw
+                ? '모든 칸이 가득 찼습니다.'
+                : `총 ${soloHistory.length}수 만에 5목을 완성했습니다!`}
+            </p>
+
+            <div className="rank-list">
+              {soloPlayers.map((p) => {
+                const isChamp = soloRoundWinner?.id === p.id;
+                return (
+                  <div key={p.id} className={`rank-item ${isChamp ? 'winner' : ''}`}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        className={`stone-badge-icon mini ${
+                          p.stone === 'BLACK' ? 'black' : 'white'
+                        }`}
+                      />
+                      {isChamp ? '🥇 ' : ''}
+                      {p.name}
+                    </span>
+                    <span>
+                      {p.wins} / {soloTargetWins}승 ({p.movesCount}수)
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setSoloState('SETUP')}
+              >
+                ⚙️ 설정 변경
+              </button>
+              <button
+                type="button"
+                className="btn btn-success"
+                onClick={startNextSoloRound}
+              >
+                {isSoloSeriesOver ? '🔄 새 매치 시작' : '🔥 다음 국 (흑/백 교대)'}
+              </button>
+            </div>
           </div>
         </div>
       )}
