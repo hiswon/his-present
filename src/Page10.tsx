@@ -361,6 +361,7 @@ export default function Page10() {
   const [joinModalRoom, setJoinModalRoom] = useState<NetRoomData | null>(null);
   const [joinPlayerName, setJoinPlayerName] = useState<string>('');
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [waitingCountdownSec, setWaitingCountdownSec] = useState<number>(420); // 7분(420초)
   const timeoutHandledRef = useRef<number | null>(null);
 
   const [gameState, setGameState] = useState<'SETUP' | 'READY' | 'PLAYING' | 'GAME_OVER'>('SETUP');
@@ -538,20 +539,24 @@ export default function Page10() {
       ? rooms.find((r) => r.roomId === selectedRoomId) || null
       : null;
 
-  // ⏰ 대기실 7분 초과 감지 및 게임중 0초 타임아웃 감지 로직
+  // ⏰ 7분 대기실 타임아웃 & 게임 턴 타임아웃 감지 및 즉시 전환 로직
   useEffect(() => {
     if (appMode !== 'NET_ROOM' || !activeNetRoom) {
       setRemainingSeconds(0);
+      setWaitingCountdownSec(420);
       return;
     }
 
     const timer = window.setInterval(async () => {
       const now = Date.now();
 
-      // 1) 대기실(WAITING) 상태에서 7분(420초) 이상 경과한 경우 자동 비우기
+      // 1) 대기실(WAITING) 상태에서 7분(425초) 초과 감지 및 카운트다운 계산
       if (activeNetRoom.status === 'WAITING' && activeNetRoom.waitingSince) {
         const elapsedSec = (now - activeNetRoom.waitingSince) / 1000;
-        if (elapsedSec >= 420) {
+        const leftSec = Math.max(0, 420 - Math.floor(elapsedSec));
+        setWaitingCountdownSec(leftSec);
+
+        if (elapsedSec >= 425) {
           const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
           await set(roomRef, createDefaultRoom(activeNetRoom.roomId));
           showToast('⏳ 대기 시간이 7분을 초과하여 방이 자동으로 비워졌습니다.', 'info');
@@ -561,26 +566,20 @@ export default function Page10() {
         }
       }
 
-      // 2) 게임 플레이 중(PLAYING) 상태에서 턴 제한시간 초과 감지 (0초 되면 바로 넘김)
+      // 2) 게임 플레이 중(PLAYING) 상태에서 턴 제한시간 초과 감지 및 0초 시 즉시 다음 텀 전환
       if (activeNetRoom.status === 'PLAYING' && activeNetRoom.turnDeadline) {
         const diff = Math.max(0, Math.ceil((activeNetRoom.turnDeadline - now) / 1000));
         setRemainingSeconds(diff);
 
         if (diff === 0 && timeoutHandledRef.current !== activeNetRoom.turnDeadline) {
-          const currP = activeNetRoom.players?.[activeNetRoom.currentPlayerIdx];
-          const amIResponsible =
-            currP?.id === mySessionId || activeNetRoom.players?.[0]?.id === mySessionId;
-
-          if (amIResponsible) {
-            timeoutHandledRef.current = activeNetRoom.turnDeadline;
-            handleNetTurnTimeout(activeNetRoom);
-          }
+          timeoutHandledRef.current = activeNetRoom.turnDeadline;
+          handleNetTurnTimeout(activeNetRoom);
         }
       }
     }, 500);
 
     return () => window.clearInterval(timer);
-  }, [appMode, activeNetRoom, mySessionId]);
+  }, [appMode, activeNetRoom]);
 
   const handleEnterRoomSubmit = async () => {
     if (!joinModalRoom) return;
@@ -878,9 +877,16 @@ export default function Page10() {
         return room;
       }
 
-      // 게임 도중(PLAYING) 한 사람이 빠져나올 때(한 사람만 남아있어도) 게임 종료가 아니라 그 사람만 나오고 계속 진행
-      if (room.status === 'PLAYING' && filteredPlayers.length === 0) {
-        return createDefaultRoom(room.roomId);
+      // 게임 도중(PLAYING) 이탈 시: 한 명이라도 남아있으면 방을 비우지 않고 게임 지속
+      if (room.status === 'PLAYING') {
+        if (filteredPlayers.length === 0) {
+          return createDefaultRoom(room.roomId);
+        }
+        const adjustedIdx = room.currentPlayerIdx % filteredPlayers.length;
+        room.players = filteredPlayers;
+        room.waitlist = filteredWaitlist;
+        room.currentPlayerIdx = adjustedIdx;
+        return room;
       }
 
       const adjustedIdx =
@@ -904,25 +910,17 @@ export default function Page10() {
     const roomRef = ref(db, `labyrinth_rooms/room_${room.roomId}`);
     const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, room.level);
     const playersArr = room.players || [];
-    const nextIdx = playersArr.length > 0 ? (room.currentPlayerIdx + 1) % playersArr.length : 0;
+    if (playersArr.length === 0) return;
+
+    const nextIdx = (room.currentPlayerIdx + 1) % playersArr.length;
     const timedOutName = playersArr[room.currentPlayerIdx]?.name || '탐험가';
-
-    const nextTimeouts = (room.consecutiveTimeouts || 0) + 1;
-
-    if (nextTimeouts >= 3) {
-      await set(roomRef, createDefaultRoom(room.roomId));
-      showToast('⚠️ 0초 초과 활동 미감지로 방이 초기화되었습니다.', 'info');
-      setSelectedRoomId(null);
-      setAppMode('NET_LOBBY');
-      return;
-    }
 
     await update(roomRef, {
       currentPlayerIdx: nextIdx,
       turnPhase: 'SHIFT',
       turnDeadline: Date.now() + levelTimeout * 1000,
-      lastActionNotice: `⏰ ${timedOutName}님 시간초과! 다음 턴으로 즉시 넘어갑니다.`,
-      consecutiveTimeouts: nextTimeouts,
+      lastActionNotice: `⏰ ${timedOutName}님 시간 초과! 다음 사람으로 텀이 넘어갑니다.`,
+      consecutiveTimeouts: 0,
     });
   };
 
@@ -959,6 +957,9 @@ export default function Page10() {
     }
 
     playSound('shift');
+    const cheer = SHIFT_CHEERS[Math.floor(Math.random() * SHIFT_CHEERS.length)];
+    speakKorean(cheer);
+
     const netBoard: BoardTile[][] = JSON.parse(activeNetRoom.boardFlat || '[]');
     const nextBoard = netBoard.map((row) => [...row]);
     const enteringTile = { ...activeNetRoom.spareTile };
@@ -995,9 +996,6 @@ export default function Page10() {
       return { ...p, row, col };
     });
 
-    const shiftCheer = SHIFT_CHEERS[Math.floor(Math.random() * SHIFT_CHEERS.length)];
-    speakKorean(shiftCheer);
-
     const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
     await update(roomRef, {
       boardFlat: JSON.stringify(nextBoard),
@@ -1006,7 +1004,7 @@ export default function Page10() {
       forbiddenArrowId: arrow.oppositeId,
       lastPushedArrowId: arrow.id,
       turnPhase: 'MOVE',
-      lastActionNotice: `✨ ${shiftCheer} 이동할 칸을 선택하세요!`,
+      lastActionNotice: `✨ ${currP.name}님이 미로를 밀었습니다! 이동할 칸을 선택하세요.`,
       consecutiveTimeouts: 0,
     });
   };
@@ -1020,7 +1018,7 @@ export default function Page10() {
       return;
 
     const playersArr = activeNetRoom.players || [];
-    const currIdx = activeNetRoom.currentPlayerIdx;
+    const currIdx = activeNetRoom.currentPlayerIdx % playersArr.length;
     const currP = playersArr[currIdx];
     if (!currP || currP.id !== mySessionId) {
       showToast('지금은 내 차례가 아닙니다!', 'info');
@@ -1236,7 +1234,7 @@ export default function Page10() {
     const firstTarget = initializedPlayers[0]?.targetStack[0];
     if (firstTarget) {
       showToast(
-        `🧭 ${initializedPlayers[0].name}님 차례! 화살표를 눌러 [${firstTarget.emoji} ${firstTarget.name}] 길을 여세요.`,
+        `🧭 ${initializedPlayers[0].name}님 차례! 붕붕 뜨는 화살표를 눌러 [${firstTarget.emoji} ${firstTarget.name}] 길을 여세요.`,
         'info'
       );
     }
@@ -1268,6 +1266,8 @@ export default function Page10() {
 
     isAnimatingRef.current = true;
     playSound('shift');
+    const cheer = SHIFT_CHEERS[Math.floor(Math.random() * SHIFT_CHEERS.length)];
+    speakKorean(cheer);
 
     const enteringTile = { ...spareTile };
     setShiftingState({ arrow, enteringTile, active: false });
@@ -1322,9 +1322,7 @@ export default function Page10() {
       setTurnPhase('MOVE');
       isAnimatingRef.current = false;
 
-      const cheer = SHIFT_CHEERS[Math.floor(Math.random() * SHIFT_CHEERS.length)];
-      speakKorean(cheer);
-      showToast(`✨ ${cheer} 이동할 칸을 터치하세요!`, 'bonus');
+      showToast(`✨ ${cheer} 초록색 길 중 이동할 칸을 터치하세요!`, 'bonus');
     }, 430);
   };
 
@@ -1336,7 +1334,7 @@ export default function Page10() {
     const nextGoal = nextPlayer?.targetStack?.[0];
     if (nextGoal) {
       showToast(
-        `👉 ${nextPlayer.name}님 차례! 화살표로 [${nextGoal.emoji} ${nextGoal.name}] 길을 밀어보세요!`,
+        `👉 ${nextPlayer.name}님 차례! 먼저 붕붕 뜨는 화살표로 [${nextGoal.emoji} ${nextGoal.name}] 길을 밀어보세요!`,
         'info'
       );
     } else {
@@ -1915,9 +1913,14 @@ export default function Page10() {
 
     const roomPlayers = activeNetRoom.players || [];
     const roomWaitlist = activeNetRoom.waitlist || [];
+    const isHost = roomPlayers[0]?.id === mySessionId;
     const amIWaitlisted = roomWaitlist.some((w) => w.id === mySessionId);
 
     if (activeNetRoom.status === 'WAITING' || activeNetRoom.status === 'EMPTY') {
+      const minutes = Math.floor(waitingCountdownSec / 60);
+      const seconds = waitingCountdownSec % 60;
+      const countdownStr = `${minutes}분 ${seconds < 10 ? '0' : ''}${seconds}초`;
+
       return (
         <div className="lab-container" style={{ background: PLAYER_BG_COLORS[0] }}>
           <div className="setup-card">
@@ -1931,7 +1934,7 @@ export default function Page10() {
                 🚪 방 나가기
               </button>
               <span className="room-status-pill waiting">
-                제 {activeNetRoom.roomId}방 · 대기중 (7분 미시작 시 자동 비워짐)
+                제 {activeNetRoom.roomId}방 · 대기 중 (자동 비워짐까지 ⏱️ {countdownStr})
               </span>
             </div>
 
@@ -1940,12 +1943,15 @@ export default function Page10() {
             </h1>
 
             <div className="setting-section">
-              <label className="setting-label">💎 시작 보물 카드 수 (누구나 설정 가능)</label>
+              <label className="setting-label">
+                💎 시작 보물 카드 수 {isHost ? '(방장 설정 가능)' : '(방장이 설정 중)'}
+              </label>
               <div className="piece-count-selector">
                 {[2, 3, 4, 5].map((num) => (
                   <button
                     key={num}
                     type="button"
+                    disabled={!isHost}
                     className={`count-btn ${activeNetRoom.baseCards === num ? 'active' : ''}`}
                     onClick={() => updateRoomSettings(num, activeNetRoom.baseTimeout)}
                   >
@@ -1957,8 +1963,7 @@ export default function Page10() {
 
             <div className="setting-section">
               <label className="setting-label">
-                ⏱️ 기본 턴 제한시간: <strong>{activeNetRoom.baseTimeout}초</strong> (15~100초 ·
-                레벨당 10초씩 단축)
+                ⏱️ 기본 턴 제한시간: <strong>{activeNetRoom.baseTimeout}초</strong> {isHost ? '(방장 설정 가능)' : ''}
               </label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 700 }}>15초</span>
@@ -1967,6 +1972,7 @@ export default function Page10() {
                   min={15}
                   max={100}
                   step={5}
+                  disabled={!isHost}
                   value={activeNetRoom.baseTimeout}
                   style={{ flex: 1 }}
                   onChange={(e) =>
@@ -1989,7 +1995,7 @@ export default function Page10() {
                       >
                         {getShortName(p.name)}
                       </span>
-                      {p.name} {p.id === mySessionId && '(나)'}
+                      {p.name} {idx === 0 && '👑(방장)'} {p.id === mySessionId && '(나)'}
                     </span>
                     <span style={{ fontSize: '12px', color: '#059669' }}>준비완료</span>
                   </div>
@@ -1997,14 +2003,13 @@ export default function Page10() {
               </div>
             </div>
 
-            {/* 1. 누구나 시작 버튼을 누를 수 있도록 수정 */}
             <button
               type="button"
               className="btn btn-success"
               disabled={roomPlayers.length < 2}
               onClick={handleStartNetGameFromLobby}
             >
-              🚀 레벨 1 게임 시작하기 ({roomPlayers.length}/4명)
+              🚀 게임 시작하기 ({roomPlayers.length}/4명) — 누구나 시작 가능!
             </button>
           </div>
         </div>
@@ -2018,7 +2023,7 @@ export default function Page10() {
       netBoard = [[]];
     }
 
-    const netCurrIdx = activeNetRoom.currentPlayerIdx || 0;
+    const netCurrIdx = (activeNetRoom.currentPlayerIdx || 0) % roomPlayers.length;
     const netCurrPlayer = roomPlayers[netCurrIdx];
     const isMyTurn = netCurrPlayer?.id === mySessionId;
     const isNetShiftPhase = activeNetRoom.turnPhase === 'SHIFT' && isMyTurn;
@@ -2034,6 +2039,7 @@ export default function Page10() {
 
     const levelCards = getLevelCardCount(activeNetRoom.baseCards, activeNetRoom.level);
     const levelWinner = roomPlayers.find((p) => p.id === activeNetRoom.levelWinnerId);
+    const amILevelWinner = activeNetRoom.levelWinnerId === mySessionId;
 
     return (
       <div
@@ -2112,112 +2118,53 @@ export default function Page10() {
                   `⚜️ 제 ${activeNetRoom.roomId}방 · 레벨 ${activeNetRoom.level} ⚜️`}
               </div>
 
-              {/* 6. 모바일 공간 최적화: 사이드 화살표 오버레이 배치 (별도 바깥 공간 대신 미로 가장자리에 겹침) */}
-              <div className="maze-grid-with-overlay" style={{ position: 'relative', display: 'inline-block', margin: '0 auto' }}>
-                {/* 상단 화살표 오버레이 */}
-                <div style={{ position: 'absolute', top: '-18px', left: 0, right: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', zIndex: 10, pointerEvents: 'none' }}>
-                  {Array.from({ length: 7 }).map((_, c) => {
-                    const arrow = topArrows.find((a) => a.index === c);
-                    if (!arrow) return <div key={`top-empty-${c}`} />;
-                    const disabled =
-                      !isMyTurn ||
-                      activeNetRoom.turnPhase !== 'SHIFT' ||
-                      arrow.id === activeNetRoom.forbiddenArrowId;
-                    return (
-                      <div key={arrow.id} style={{ display: 'flex', justifyContent: 'center', pointerEvents: 'auto' }}>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          className={`push-arrow-btn overlay-arrow ${
-                            !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
-                          } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                          style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                          onClick={() => handleNetPushTile(arrow)}
-                        >
-                          ▼
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className="arrow-row-horizontal">
+                <div className="corner-compass">🧭</div>
+                {Array.from({ length: 7 }).map((_, c) => {
+                  const arrow = topArrows.find((a) => a.index === c);
+                  if (!arrow) return <div key={`top-empty-${c}`} className="arrow-cell empty" />;
+                  const disabled =
+                    !isMyTurn ||
+                    activeNetRoom.turnPhase !== 'SHIFT' ||
+                    arrow.id === activeNetRoom.forbiddenArrowId;
+                  return (
+                    <button
+                      key={arrow.id}
+                      type="button"
+                      disabled={disabled}
+                      className={`push-arrow-btn ${
+                        !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
+                      } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                      onClick={() => handleNetPushTile(arrow)}
+                    >
+                      ▼
+                    </button>
+                  );
+                })}
+                <div className="corner-compass">⚜️</div>
+              </div>
 
-                {/* 하단 화살표 오버레이 */}
-                <div style={{ position: 'absolute', bottom: '-18px', left: 0, right: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', zIndex: 10, pointerEvents: 'none' }}>
-                  {Array.from({ length: 7 }).map((_, c) => {
-                    const arrow = bottomArrows.find((a) => a.index === c);
-                    if (!arrow) return <div key={`bot-empty-${c}`} />;
-                    const disabled =
-                      !isMyTurn ||
-                      activeNetRoom.turnPhase !== 'SHIFT' ||
-                      arrow.id === activeNetRoom.forbiddenArrowId;
-                    return (
-                      <div key={arrow.id} style={{ display: 'flex', justifyContent: 'center', pointerEvents: 'auto' }}>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          className={`push-arrow-btn overlay-arrow ${
-                            !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
-                          } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                          style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                          onClick={() => handleNetPushTile(arrow)}
-                        >
-                          ▲
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 좌측 화살표 오버레이 */}
-                <div style={{ position: 'absolute', left: '-18px', top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', zIndex: 10, pointerEvents: 'none' }}>
+              <div className="maze-middle-band">
+                <div className="arrow-col-vertical">
                   {Array.from({ length: 7 }).map((_, r) => {
                     const arrow = leftArrows.find((a) => a.index === r);
-                    if (!arrow) return <div key={`left-empty-${r}`} />;
+                    if (!arrow) return <div key={`left-empty-${r}`} className="arrow-cell empty" />;
                     const disabled =
                       !isMyTurn ||
                       activeNetRoom.turnPhase !== 'SHIFT' ||
                       arrow.id === activeNetRoom.forbiddenArrowId;
                     return (
-                      <div key={arrow.id} style={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          className={`push-arrow-btn overlay-arrow ${
-                            !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
-                          } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                          style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                          onClick={() => handleNetPushTile(arrow)}
-                        >
-                          ▶
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 우측 화살표 오버레이 */}
-                <div style={{ position: 'absolute', right: '-18px', top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', zIndex: 10, pointerEvents: 'none' }}>
-                  {Array.from({ length: 7 }).map((_, r) => {
-                    const arrow = rightArrows.find((a) => a.index === r);
-                    if (!arrow) return <div key={`right-empty-${r}`} />;
-                    const disabled =
-                      !isMyTurn ||
-                      activeNetRoom.turnPhase !== 'SHIFT' ||
-                      arrow.id === activeNetRoom.forbiddenArrowId;
-                    return (
-                      <div key={arrow.id} style={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          className={`push-arrow-btn overlay-arrow ${
-                            !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
-                          } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                          style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                          onClick={() => handleNetPushTile(arrow)}
-                        >
-                          ◀
-                        </button>
-                      </div>
+                      <button
+                        key={arrow.id}
+                        type="button"
+                        disabled={disabled}
+                        className={`push-arrow-btn ${
+                          !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
+                        } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                        onClick={() => handleNetPushTile(arrow)}
+                      >
+                        ▶
+                      </button>
                     );
                   })}
                 </div>
@@ -2307,6 +2254,56 @@ export default function Page10() {
                     })
                   )}
                 </div>
+
+                <div className="arrow-col-vertical">
+                  {Array.from({ length: 7 }).map((_, r) => {
+                    const arrow = rightArrows.find((a) => a.index === r);
+                    if (!arrow) return <div key={`right-empty-${r}`} className="arrow-cell empty" />;
+                    const disabled =
+                      !isMyTurn ||
+                      activeNetRoom.turnPhase !== 'SHIFT' ||
+                      arrow.id === activeNetRoom.forbiddenArrowId;
+                    return (
+                      <button
+                        key={arrow.id}
+                        type="button"
+                        disabled={disabled}
+                        className={`push-arrow-btn ${
+                          !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
+                        } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                        onClick={() => handleNetPushTile(arrow)}
+                      >
+                        ◀
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="arrow-row-horizontal">
+                <div className="corner-compass">⚜️</div>
+                {Array.from({ length: 7 }).map((_, c) => {
+                  const arrow = bottomArrows.find((a) => a.index === c);
+                  if (!arrow) return <div key={`bot-empty-${c}`} className="arrow-cell empty" />;
+                  const disabled =
+                    !isMyTurn ||
+                    activeNetRoom.turnPhase !== 'SHIFT' ||
+                    arrow.id === activeNetRoom.forbiddenArrowId;
+                  return (
+                    <button
+                      key={arrow.id}
+                      type="button"
+                      disabled={disabled}
+                      className={`push-arrow-btn ${
+                        !disabled && isNetShiftPhase ? 'guide-float-arrow' : ''
+                      } ${activeNetRoom.lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                      onClick={() => handleNetPushTile(arrow)}
+                    >
+                      ▲
+                    </button>
+                  );
+                })}
+                <div className="corner-compass">🧭</div>
               </div>
             </div>
           )}
@@ -2487,14 +2484,16 @@ export default function Page10() {
               )}
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={{ flex: 1 }}
-                  onClick={handleLeaveNetRoom}
-                >
-                  🚪 방 나가기
-                </button>
+                {(amILevelWinner || !roomPlayers.some(p => p.id === mySessionId)) && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ flex: 1 }}
+                    onClick={handleLeaveNetRoom}
+                  >
+                    🚪 방 나가기
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -2627,10 +2626,11 @@ export default function Page10() {
             <strong>📜 보물찾기 길잡이:</strong>
             <ul>
               <li>
-                1단계(길 밀기): 여분 길카드를 회전하고, 화살표를 눌러 길을 밉니다.
+                1단계(길 밀기): 붕붕 뜨는 여분 길카드를 회전하고, 붕붕 뜨는 화살표를 눌러 길을
+                밉니다.
               </li>
               <li>
-                2단계(이동): 내 말을 확인하고 초록색으로 열린 길을 터치해 이동합니다.
+                2단계(이동): 붕붕 뜨는 내 말을 확인하고 초록색으로 열린 길을 터치해 이동합니다.
               </li>
               <li>💡 팁: 말을 길게 꾹 누르면 말이 투명해져 뒤에 숨은 길 모양을 볼 수 있어요!</li>
             </ul>
@@ -2750,104 +2750,53 @@ export default function Page10() {
           <div className="maze-board-outer">
             <div className="maze-ancient-crest">
               {isPeekingRoad
-                ? '👁️ 뒷길 투시 중 (손을 떼면 말이 다시 보입니다)'
+                ? '👁️ 뒷길 투시 중 (손을 떼면 말이 다시 보ifies)'
                 : '⚜️ AMAZING LABYRINTH · 말을 꾹 누르면 뒷길 확인 ⚜️'}
             </div>
 
-            {/* 단독 플레이용 오버레이 화살표 레이아웃 */}
-            <div className="maze-grid-with-overlay" style={{ position: 'relative', display: 'inline-block', margin: '0 auto' }}>
-              <div style={{ position: 'absolute', top: '-18px', left: 0, right: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', zIndex: 10, pointerEvents: 'none' }}>
-                {Array.from({ length: 7 }).map((_, c) => {
-                  const arrow = topArrows.find((a) => a.index === c);
-                  if (!arrow) return <div key={`top-empty-${c}`} />;
-                  const disabled =
-                    turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
-                  return (
-                    <div key={arrow.id} style={{ display: 'flex', justifyContent: 'center', pointerEvents: 'auto' }}>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        className={`push-arrow-btn overlay-arrow ${
-                          !disabled && isShiftPhase ? 'guide-float-arrow' : ''
-                        } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                        style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                        onClick={() => handlePushTile(arrow)}
-                      >
-                        ▼
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="arrow-row-horizontal">
+              <div className="corner-compass">🧭</div>
+              {Array.from({ length: 7 }).map((_, c) => {
+                const arrow = topArrows.find((a) => a.index === c);
+                if (!arrow) return <div key={`top-empty-${c}`} className="arrow-cell empty" />;
+                const disabled =
+                  turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
+                return (
+                  <button
+                    key={arrow.id}
+                    type="button"
+                    disabled={disabled}
+                    className={`push-arrow-btn ${
+                      !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                    } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                    onClick={() => handlePushTile(arrow)}
+                  >
+                    ▼
+                  </button>
+                );
+              })}
+              <div className="corner-compass">⚜️</div>
+            </div>
 
-              <div style={{ position: 'absolute', bottom: '-18px', left: 0, right: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', zIndex: 10, pointerEvents: 'none' }}>
-                {Array.from({ length: 7 }).map((_, c) => {
-                  const arrow = bottomArrows.find((a) => a.index === c);
-                  if (!arrow) return <div key={`bot-empty-${c}`} />;
-                  const disabled =
-                    turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
-                  return (
-                    <div key={arrow.id} style={{ display: 'flex', justifyContent: 'center', pointerEvents: 'auto' }}>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        className={`push-arrow-btn overlay-arrow ${
-                          !disabled && isShiftPhase ? 'guide-float-arrow' : ''
-                        } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                        style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                        onClick={() => handlePushTile(arrow)}
-                      >
-                        ▲
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ position: 'absolute', left: '-18px', top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', zIndex: 10, pointerEvents: 'none' }}>
+            <div className="maze-middle-band">
+              <div className="arrow-col-vertical">
                 {Array.from({ length: 7 }).map((_, r) => {
                   const arrow = leftArrows.find((a) => a.index === r);
-                  if (!arrow) return <div key={`left-empty-${r}`} />;
+                  if (!arrow) return <div key={`left-empty-${r}`} className="arrow-cell empty" />;
                   const disabled =
                     turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
                   return (
-                    <div key={arrow.id} style={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        className={`push-arrow-btn overlay-arrow ${
-                          !disabled && isShiftPhase ? 'guide-float-arrow' : ''
-                        } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                        style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                        onClick={() => handlePushTile(arrow)}
-                      >
-                        ▶
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ position: 'absolute', right: '-18px', top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-around', zIndex: 10, pointerEvents: 'none' }}>
-                {Array.from({ length: 7 }).map((_, r) => {
-                  const arrow = rightArrows.find((a) => a.index === r);
-                  if (!arrow) return <div key={`right-empty-${r}`} />;
-                  const disabled =
-                    turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
-                  return (
-                    <div key={arrow.id} style={{ display: 'flex', alignItems: 'center', pointerEvents: 'auto' }}>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        className={`push-arrow-btn overlay-arrow ${
-                          !disabled && isShiftPhase ? 'guide-float-arrow' : ''
-                        } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
-                        style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#2563eb', color: '#fff', border: '2px solid #fff', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-                        onClick={() => handlePushTile(arrow)}
-                      >
-                        ◀
-                      </button>
-                    </div>
+                    <button
+                      key={arrow.id}
+                      type="button"
+                      disabled={disabled}
+                      className={`push-arrow-btn ${
+                        !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                      } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                      onClick={() => handlePushTile(arrow)}
+                    >
+                      ▶
+                    </button>
                   );
                 })}
               </div>
@@ -2949,6 +2898,52 @@ export default function Page10() {
                   })
                 )}
               </div>
+
+              <div className="arrow-col-vertical">
+                {Array.from({ length: 7 }).map((_, r) => {
+                  const arrow = rightArrows.find((a) => a.index === r);
+                  if (!arrow) return <div key={`right-empty-${r}`} className="arrow-cell empty" />;
+                  const disabled =
+                    turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
+                  return (
+                    <button
+                      key={arrow.id}
+                      type="button"
+                      disabled={disabled}
+                      className={`push-arrow-btn ${
+                        !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                      } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                      onClick={() => handlePushTile(arrow)}
+                    >
+                      ◀
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="arrow-row-horizontal">
+              <div className="corner-compass">⚜️</div>
+              {Array.from({ length: 7 }).map((_, c) => {
+                const arrow = bottomArrows.find((a) => a.index === c);
+                if (!arrow) return <div key={`bot-empty-${c}`} className="arrow-cell empty" />;
+                const disabled =
+                  turnPhase !== 'SHIFT' || arrow.id === forbiddenArrowId || !!shiftingState;
+                return (
+                  <button
+                    key={arrow.id}
+                    type="button"
+                    disabled={disabled}
+                    className={`push-arrow-btn ${
+                      !disabled && isShiftPhase ? 'guide-float-arrow' : ''
+                    } ${lastPushedArrowId === arrow.id ? 'last-pushed' : ''}`}
+                    onClick={() => handlePushTile(arrow)}
+                  >
+                    ▲
+                  </button>
+                );
+              })}
+              <div className="corner-compass">🧭</div>
             </div>
           </div>
 
@@ -3004,7 +2999,7 @@ export default function Page10() {
                 </span>
                 <span className="step-status-badge">
                   {turnPhase === 'SHIFT'
-                    ? '1단계: 화살표로 길 밀기'
+                    ? '1단계: 붕붕 뜨는 화살표로 길 밀기'
                     : '2단계: 초록 길 터치 이동 (말 꾹 누르면 뒷길 투시)'}
                 </span>
               </div>
