@@ -47,6 +47,11 @@ interface WaitlistPlayer {
   name: string;
 }
 
+interface SpectatorPlayer {
+  id: string;
+  name: string;
+}
+
 interface PushArrow {
   id: string;
   dir: 'DOWN' | 'UP' | 'RIGHT' | 'LEFT';
@@ -65,6 +70,7 @@ interface NetRoomData {
   status: 'EMPTY' | 'WAITING' | 'PLAYING' | 'LEVEL_CLEAR';
   players: LabyrinthPlayer[];
   waitlist: WaitlistPlayer[];
+  spectators: SpectatorPlayer[];
   baseCards: number;
   baseTimeout: number;
   level: number;
@@ -78,7 +84,7 @@ interface NetRoomData {
   levelWinnerId: string | null;
   lastActionNotice: string;
   consecutiveTimeouts: number;
-  waitingSince?: number | null; // 👈 null 허용으로 수정
+  waitingSince?: number | null;
 }
 
 interface HallOfFameRecord {
@@ -320,6 +326,7 @@ function createDefaultRoom(roomId: number): NetRoomData {
     status: 'EMPTY',
     players: [],
     waitlist: [],
+    spectators: [],
     baseCards: 3,
     baseTimeout: 45,
     level: 1,
@@ -333,7 +340,7 @@ function createDefaultRoom(roomId: number): NetRoomData {
     levelWinnerId: null,
     lastActionNotice: '',
     consecutiveTimeouts: 0,
-    waitingSince: null, // 👈 undefined -> null 로 수정
+    waitingSince: null,
   };
 }
 
@@ -361,7 +368,7 @@ export default function Page10() {
   const [joinModalRoom, setJoinModalRoom] = useState<NetRoomData | null>(null);
   const [joinPlayerName, setJoinPlayerName] = useState<string>('');
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
-  const [waitingCountdownSec, setWaitingCountdownSec] = useState<number>(420); // 7분(420초)
+  const [waitingCountdownSec, setWaitingCountdownSec] = useState<number>(420);
   const timeoutHandledRef = useRef<number | null>(null);
 
   const [gameState, setGameState] = useState<'SETUP' | 'READY' | 'PLAYING' | 'GAME_OVER'>('SETUP');
@@ -526,6 +533,7 @@ export default function Page10() {
           ...rData,
           players: rData.players || [],
           waitlist: rData.waitlist || [],
+          spectators: rData.spectators || [],
         };
       });
       setRooms(loadedRooms);
@@ -539,7 +547,7 @@ export default function Page10() {
       ? rooms.find((r) => r.roomId === selectedRoomId) || null
       : null;
 
-  // ⏰ 7분 대기실 타임아웃 & 게임 턴 타임아웃 감지 및 즉시 전환 로직
+  // ⏰ 7분 대기실 타임아웃 & 게임 턴 타임아웃 감지 및 누적 타임아웃 자동 퇴장 로직
   useEffect(() => {
     if (appMode !== 'NET_ROOM' || !activeNetRoom) {
       setRemainingSeconds(0);
@@ -566,7 +574,7 @@ export default function Page10() {
         }
       }
 
-      // 2) 게임 플레이 중(PLAYING) 상태에서 턴 제한시간 초과 감지 및 0초 시 즉시 다음 텀 전환
+      // 2) 게임 플레이 중(PLAYING) 상태에서 턴 제한시간 초과 감지 및 0초 시 처리
       if (activeNetRoom.status === 'PLAYING' && activeNetRoom.turnDeadline) {
         const diff = Math.max(0, Math.ceil((activeNetRoom.turnDeadline - now) / 1000));
         setRemainingSeconds(diff);
@@ -581,7 +589,7 @@ export default function Page10() {
     return () => window.clearInterval(timer);
   }, [appMode, activeNetRoom]);
 
-  const handleEnterRoomSubmit = async () => {
+  const handleEnterRoomSubmit = async (asSpectator = false) => {
     if (!joinModalRoom) return;
     const trimmedName = joinPlayerName ? joinPlayerName.trim() : '';
     if (!trimmedName) {
@@ -598,10 +606,18 @@ export default function Page10() {
         const room: NetRoomData = roomData || createDefaultRoom(joinModalRoom.roomId);
         if (!room.players) room.players = [];
         if (!room.waitlist) room.waitlist = [];
+        if (!room.spectators) room.spectators = [];
+
+        if (asSpectator) {
+          room.spectators.push({ id: mySessionId, name: trimmedName });
+          joinResultType = 'SPECTATOR';
+          return room;
+        }
 
         if (
           room.players.some((p) => p.id === mySessionId) ||
-          room.waitlist.some((w) => w.id === mySessionId)
+          room.waitlist.some((w) => w.id === mySessionId) ||
+          room.spectators.some((s) => s.id === mySessionId)
         ) {
           joinResultType = 'REJOIN';
           return room;
@@ -641,7 +657,9 @@ export default function Page10() {
       setJoinPlayerName('');
       setAppMode('NET_ROOM');
 
-      if (joinResultType === 'WAITLIST') {
+      if (joinResultType === 'SPECTATOR') {
+        showToast('👀 관망모드로 입장했습니다!', 'info');
+      } else if (joinResultType === 'WAITLIST') {
         showToast('⏳ 현재 게임 중이거나 만석이어서 다음 레벨 예약자로 등록되었습니다!', 'info');
       }
     } catch (err) {
@@ -665,7 +683,8 @@ export default function Page10() {
     room: NetRoomData,
     targetLevel: number,
     nextPlayersRaw: LabyrinthPlayer[],
-    nextWaitlist: WaitlistPlayer[]
+    nextWaitlist: WaitlistPlayer[],
+    nextSpectators: SpectatorPlayer[]
   ) => {
     const levelCards = getLevelCardCount(room.baseCards, targetLevel);
     const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, targetLevel);
@@ -698,6 +717,7 @@ export default function Page10() {
       level: targetLevel,
       players: initializedPlayers,
       waitlist: nextWaitlist,
+      spectators: nextSpectators,
       boardFlat: JSON.stringify(initialBoard),
       spareTile: spare,
       currentPlayerIdx: 0,
@@ -708,7 +728,7 @@ export default function Page10() {
       levelWinnerId: null,
       lastActionNotice: `🚀 레벨 ${targetLevel} 시작! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`,
       consecutiveTimeouts: 0,
-      waitingSince: null, // 👈 undefined -> null 로 수정
+      waitingSince: null,
     });
   };
 
@@ -719,7 +739,7 @@ export default function Page10() {
       showToast('최소 2명 이상 모여야 게임을 시작할 수 있습니다!', 'info');
       return;
     }
-    await startNetLevel(activeNetRoom, 1, currentPlayers, activeNetRoom.waitlist || []);
+    await startNetLevel(activeNetRoom, 1, currentPlayers, activeNetRoom.waitlist || [], activeNetRoom.spectators || []);
   };
 
   const handleAdvanceToNextLevel = async () => {
@@ -731,6 +751,7 @@ export default function Page10() {
       const room = roomData as NetRoomData;
       if (!room.players) room.players = [];
       if (!room.waitlist) room.waitlist = [];
+      if (!room.spectators) room.spectators = [];
 
       const nextLevel = room.level + 1;
       if (nextLevel > 5) {
@@ -840,7 +861,7 @@ export default function Page10() {
       room.levelWinnerId = null;
       room.lastActionNotice = `🔥 레벨 ${nextLevel} 돌입! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`;
       room.consecutiveTimeouts = 0;
-      room.waitingSince = null; // 👈 undefined -> null 로 수정
+      room.waitingSince = null;
       
       return room;
     });
@@ -858,21 +879,24 @@ export default function Page10() {
       const room = roomData as NetRoomData;
       if (!room.players) room.players = [];
       if (!room.waitlist) room.waitlist = [];
+      if (!room.spectators) room.spectators = [];
 
       const filteredPlayers = room.players.filter((p) => p.id !== mySessionId);
       const filteredWaitlist = room.waitlist.filter((w) => w.id !== mySessionId);
+      const filteredSpectators = room.spectators.filter((s) => s.id !== mySessionId);
 
-      if (room.status === 'WAITING' && filteredPlayers.length === 0) {
+      if (room.status === 'WAITING' && filteredPlayers.length === 0 && filteredSpectators.length === 0) {
         return createDefaultRoom(room.roomId);
       }
 
       if (room.status === 'LEVEL_CLEAR') {
         const newWinnerId = room.levelWinnerId === mySessionId ? null : room.levelWinnerId;
-        if (filteredPlayers.length === 0 && filteredWaitlist.length === 0) {
+        if (filteredPlayers.length === 0 && filteredWaitlist.length === 0 && filteredSpectators.length === 0) {
           return createDefaultRoom(room.roomId);
         }
         room.players = filteredPlayers;
         room.waitlist = filteredWaitlist;
+        room.spectators = filteredSpectators;
         room.levelWinnerId = newWinnerId;
         return room;
       }
@@ -884,6 +908,7 @@ export default function Page10() {
         const adjustedIdx = room.currentPlayerIdx % filteredPlayers.length;
         room.players = filteredPlayers;
         room.waitlist = filteredWaitlist;
+        room.spectators = filteredSpectators;
         room.currentPlayerIdx = adjustedIdx;
         return room;
       }
@@ -893,10 +918,11 @@ export default function Page10() {
 
       room.players = filteredPlayers;
       room.waitlist = filteredWaitlist;
+      room.spectators = filteredSpectators;
       room.currentPlayerIdx = adjustedIdx;
-      if (filteredPlayers.length === 0) {
+      if (filteredPlayers.length === 0 && filteredSpectators.length === 0) {
         room.status = 'EMPTY';
-        room.waitingSince = null; // 👈 undefined -> null 로 수정
+        room.waitingSince = null;
       }
       return room;
     });
@@ -911,15 +937,42 @@ export default function Page10() {
     const playersArr = room.players || [];
     if (playersArr.length === 0) return;
 
+    const timedOutPlayer = playersArr[room.currentPlayerIdx];
+    const newConsecutive = (room.consecutiveTimeouts || 0) + 1;
+    const maxAllowedTimeouts = playersArr.length * 2; // 인원수 * 2번 타임아웃 시 자동 퇴장
+
+    // 만약 연속 타임아웃 횟수가 초과되었고 해당 유저가 존재한다면 방에서 자동 퇴출
+    if (newConsecutive >= maxAllowedTimeouts && timedOutPlayer) {
+      const remainingPlayers = playersArr.filter((p) => p.id !== timedOutPlayer.id);
+
+      if (remainingPlayers.length < 2) {
+        // 인원 미달 시 방 초기화
+        await set(roomRef, createDefaultRoom(room.roomId));
+        showToast(`⏰ ${timedOutPlayer.name}님 장기 미참여로 자동 퇴장되었으며, 인원 미달로 방이 초기화되었습니다.`, 'info');
+        return;
+      }
+
+      const nextIdx = room.currentPlayerIdx % remainingPlayers.length;
+      await update(roomRef, {
+        players: remainingPlayers,
+        currentPlayerIdx: nextIdx,
+        turnPhase: 'SHIFT',
+        turnDeadline: Date.now() + levelTimeout * 1000,
+        lastActionNotice: `⏰ ${timedOutPlayer.name}님이 연속 타임아웃으로 자동 퇴장되었습니다!`,
+        consecutiveTimeouts: 0,
+      });
+      return;
+    }
+
     const nextIdx = (room.currentPlayerIdx + 1) % playersArr.length;
-    const timedOutName = playersArr[room.currentPlayerIdx]?.name || '탐험가';
+    const timedOutName = timedOutPlayer?.name || '탐험가';
 
     await update(roomRef, {
       currentPlayerIdx: nextIdx,
       turnPhase: 'SHIFT',
       turnDeadline: Date.now() + levelTimeout * 1000,
-      lastActionNotice: `⏰ ${timedOutName}님 시간 초과! 다음 사람으로 텀이 넘어갑니다.`,
-      consecutiveTimeouts: 0,
+      lastActionNotice: `⏰ ${timedOutName}님 시간 초과! (${newConsecutive}/${maxAllowedTimeouts}회 누적)`,
+      consecutiveTimeouts: newConsecutive,
     });
   };
 
@@ -1653,7 +1706,7 @@ export default function Page10() {
             >
               <span className="mode-icon">🌐</span>
               <strong>넷게임</strong>
-              <span className="mode-desc">온라인 4개 방 실시간 대전 & 5레벨 도전</span>
+              <span className="mode-desc">온라인 4개 방 실시간 대전 & 관망모드 지원</span>
             </button>
           </div>
 
@@ -1760,6 +1813,7 @@ export default function Page10() {
             {rooms.map((room) => {
               const roomPlayers = room.players || [];
               const roomWaitlist = room.waitlist || [];
+              const roomSpectators = room.spectators || [];
               const isEmpty = room.status === 'EMPTY' || roomPlayers.length === 0;
               const isWaiting = room.status === 'WAITING' && roomPlayers.length > 0;
               const isPlaying = room.status === 'PLAYING' || room.status === 'LEVEL_CLEAR';
@@ -1784,7 +1838,8 @@ export default function Page10() {
                   onClick={() => {
                     if (
                       roomPlayers.some((p) => p.id === mySessionId) ||
-                      roomWaitlist.some((w) => w.id === mySessionId)
+                      roomWaitlist.some((w) => w.id === mySessionId) ||
+                      roomSpectators.some((s) => s.id === mySessionId)
                     ) {
                       setSelectedRoomId(room.roomId);
                       setAppMode('NET_ROOM');
@@ -1824,6 +1879,12 @@ export default function Page10() {
                     </div>
                   </div>
 
+                  {roomSpectators.length > 0 && (
+                    <div className="room-waitlist-box" style={{ color: '#0369a1', background: '#f0f9ff' }}>
+                      👀 관망 중 ({roomSpectators.length}명): {roomSpectators.map((s) => s.name).join(', ')}
+                    </div>
+                  )}
+
                   {roomWaitlist.length > 0 && (
                     <div className="room-waitlist-box">
                       ⏳ 다음 레벨 예약 ({roomWaitlist.length}명):{' '}
@@ -1833,10 +1894,10 @@ export default function Page10() {
 
                   <div className="room-enter-cta">
                     {isEmpty
-                      ? '👉 클릭하여 방 만들기 (카드수·시간 설정)'
+                      ? '👉 클릭하여 방 만들기 또는 관망하기'
                       : isPlaying || isFull
-                      ? '⏳ 클릭하여 이름 입력 후 다음 레벨 예약하기'
-                      : '👉 클릭하여 이름 입력 후 바로 참가하기'}
+                      ? '👉 클릭하여 플레이어 참전 예약 또는 관망하기'
+                      : '👉 클릭하여 참가하기 또는 관망하기'}
                   </div>
                 </div>
               );
@@ -1849,11 +1910,7 @@ export default function Page10() {
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <h2 style={{ margin: '0 0 8px' }}>🏰 제 {joinModalRoom.roomId} 탐험방 입장</h2>
               <p className="modal-subtext">
-                {joinModalRoom.status === 'PLAYING' ||
-                joinModalRoom.status === 'LEVEL_CLEAR' ||
-                (joinModalRoom.players || []).length >= 4
-                  ? '현재 게임 중이거나 인원이 가득 차서 다음 레벨 예약자로 등록됩니다.'
-                  : '탐험에 사용할 이름을 입력해주세요.'}
+                이름을 입력하고 플레이어로 참가하거나, 게임 상황을 구경하는 **관망모드**를 선택하세요!
               </p>
 
               <input
@@ -1864,29 +1921,25 @@ export default function Page10() {
                 value={joinPlayerName}
                 autoFocus
                 onChange={(e) => setJoinPlayerName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleEnterRoomSubmit()}
+                onKeyDown={(e) => e.key === 'Enter' && handleEnterRoomSubmit(false)}
               />
 
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  style={{ flex: 1 }}
-                  onClick={() => setJoinModalRoom(null)}
+                  style={{ flex: 1, background: '#0284c7', color: '#fff' }}
+                  onClick={() => handleEnterRoomSubmit(true)}
                 >
-                  취소
+                  👀 관망하기
                 </button>
                 <button
                   type="button"
                   className="btn btn-success"
                   style={{ flex: 2 }}
-                  onClick={handleEnterRoomSubmit}
+                  onClick={() => handleEnterRoomSubmit(false)}
                 >
-                  {joinModalRoom.status === 'PLAYING' ||
-                  joinModalRoom.status === 'LEVEL_CLEAR' ||
-                  (joinModalRoom.players || []).length >= 4
-                    ? '⏳ 예약 등록하기'
-                    : '🚀 방 입장하기'}
+                  🚀 참가하기 / 예약하기
                 </button>
               </div>
             </div>
@@ -1912,8 +1965,10 @@ export default function Page10() {
 
     const roomPlayers = activeNetRoom.players || [];
     const roomWaitlist = activeNetRoom.waitlist || [];
+    const roomSpectators = activeNetRoom.spectators || [];
     const isHost = roomPlayers[0]?.id === mySessionId;
     const amIWaitlisted = roomWaitlist.some((w) => w.id === mySessionId);
+    const amISpectator = roomSpectators.some((s) => s.id === mySessionId);
 
     if (activeNetRoom.status === 'WAITING' || activeNetRoom.status === 'EMPTY') {
       const minutes = Math.floor(waitingCountdownSec / 60);
@@ -1938,7 +1993,7 @@ export default function Page10() {
             </div>
 
             <h1 className="setup-title" style={{ marginTop: '14px' }}>
-              🏰 넷게임 대기실 (총 5레벨 도전)
+              🏰 넷게임 대기실 (총 5레벨 도전) {amISpectator ? '👀 [관망모드]' : ''}
             </h1>
 
             <div className="setting-section">
@@ -2002,6 +2057,15 @@ export default function Page10() {
               </div>
             </div>
 
+            {roomSpectators.length > 0 && (
+              <div className="setting-section">
+                <label className="setting-label">👀 관망 중인 사용자</label>
+                <div style={{ fontSize: '13px', color: '#0369a1', background: '#f0f9ff', padding: '8px 12px', borderRadius: '8px' }}>
+                  {roomSpectators.map((s) => s.name).join(', ')}
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               className="btn btn-success"
@@ -2024,7 +2088,7 @@ export default function Page10() {
 
     const netCurrIdx = (activeNetRoom.currentPlayerIdx || 0) % roomPlayers.length;
     const netCurrPlayer = roomPlayers[netCurrIdx];
-    const isMyTurn = netCurrPlayer?.id === mySessionId;
+    const isMyTurn = netCurrPlayer?.id === mySessionId && !amISpectator;
     const isNetShiftPhase = activeNetRoom.turnPhase === 'SHIFT' && isMyTurn;
     const isNetMovePhase = activeNetRoom.turnPhase === 'MOVE' && isMyTurn;
 
@@ -2032,7 +2096,8 @@ export default function Page10() {
       activeNetRoom.status === 'PLAYING' &&
       activeNetRoom.turnPhase === 'MOVE' &&
       netCurrPlayer &&
-      netBoard.length > 0
+      netBoard.length > 0 &&
+      !amISpectator
         ? findReachablePaths(netBoard, netCurrPlayer.row, netCurrPlayer.col)
         : new Map<string, { r: number; c: number }[]>();
 
@@ -2058,7 +2123,9 @@ export default function Page10() {
         <div className="play-wrapper compact-tablet-mode">
           <div className="game-header compact-header">
             <div className="net-level-timer-box">
-              <span className="net-level-badge">Lv.{activeNetRoom.level}/5</span>
+              <span className="net-level-badge">
+                Lv.{activeNetRoom.level}/5 {amISpectator ? '👀[관망중]' : ''}
+              </span>
               <span className={`net-timer-badge ${remainingSeconds <= 7 ? 'urgent' : ''}`}>
                 ⏱️ {remainingSeconds}초
               </span>
@@ -2100,7 +2167,13 @@ export default function Page10() {
             </button>
           </div>
 
-          {(amIWaitlisted || roomWaitlist.length > 0) && (
+          {amISpectator && (
+            <div className="net-waitlist-strip" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+              👀 현재 관망모드 중입니다. 게임 진행 상황을 실시간으로 구경하고 계십니다!
+            </div>
+          )}
+
+          {(amIWaitlisted || roomWaitlist.length > 0) && !amISpectator && (
             <div className="net-waitlist-strip">
               {amIWaitlisted
                 ? '⏳ 현재 다음 레벨 예약 대기 중입니다! 이번 레벨이 끝나면 자동으로 참가됩니다.'
@@ -2123,6 +2196,7 @@ export default function Page10() {
                   const arrow = topArrows.find((a) => a.index === c);
                   if (!arrow) return <div key={`top-empty-${c}`} className="arrow-cell empty" />;
                   const disabled =
+                    amISpectator ||
                     !isMyTurn ||
                     activeNetRoom.turnPhase !== 'SHIFT' ||
                     arrow.id === activeNetRoom.forbiddenArrowId;
@@ -2149,6 +2223,7 @@ export default function Page10() {
                     const arrow = leftArrows.find((a) => a.index === r);
                     if (!arrow) return <div key={`left-empty-${r}`} className="arrow-cell empty" />;
                     const disabled =
+                      amISpectator ||
                       !isMyTurn ||
                       activeNetRoom.turnPhase !== 'SHIFT' ||
                       arrow.id === activeNetRoom.forbiddenArrowId;
@@ -2173,6 +2248,7 @@ export default function Page10() {
                     rowArr.map((tile, c) => {
                       const cellKey = `${r},${c}`;
                       const isReachable =
+                        !amISpectator &&
                         activeNetRoom.status === 'PLAYING' &&
                         activeNetRoom.turnPhase === 'MOVE' &&
                         netReachableCells.has(cellKey);
@@ -2193,7 +2269,7 @@ export default function Page10() {
                           onPointerUp={endLongPressPeek}
                           onPointerLeave={endLongPressPeek}
                           onClick={() => {
-                            if (activeNetRoom.turnPhase === 'MOVE') {
+                            if (!amISpectator && activeNetRoom.turnPhase === 'MOVE') {
                               handleNetSelectMoveTarget(r, c);
                             }
                           }}
@@ -2259,6 +2335,7 @@ export default function Page10() {
                     const arrow = rightArrows.find((a) => a.index === r);
                     if (!arrow) return <div key={`right-empty-${r}`} className="arrow-cell empty" />;
                     const disabled =
+                      amISpectator ||
                       !isMyTurn ||
                       activeNetRoom.turnPhase !== 'SHIFT' ||
                       arrow.id === activeNetRoom.forbiddenArrowId;
@@ -2285,6 +2362,7 @@ export default function Page10() {
                   const arrow = bottomArrows.find((a) => a.index === c);
                   if (!arrow) return <div key={`bot-empty-${c}`} className="arrow-cell empty" />;
                   const disabled =
+                    amISpectator ||
                     !isMyTurn ||
                     activeNetRoom.turnPhase !== 'SHIFT' ||
                     arrow.id === activeNetRoom.forbiddenArrowId;
@@ -2339,7 +2417,7 @@ export default function Page10() {
                     <button
                       type="button"
                       className="btn-mini-rot"
-                      disabled={!isNetShiftPhase}
+                      disabled={amISpectator || !isNetShiftPhase}
                       onClick={() => handleNetRotateSpare(-1)}
                     >
                       ↺ 좌회전
@@ -2347,7 +2425,7 @@ export default function Page10() {
                     <button
                       type="button"
                       className="btn-mini-rot primary"
-                      disabled={!isNetShiftPhase}
+                      disabled={amISpectator || !isNetShiftPhase}
                       onClick={() => handleNetRotateSpare(1)}
                     >
                       ↻ 우회전
@@ -2365,7 +2443,9 @@ export default function Page10() {
                     {netCurrPlayer.name} {isMyTurn ? '(내 차례!)' : '(진행 중)'}
                   </span>
                   <span className="step-status-badge">
-                    {!isMyTurn
+                    {amISpectator
+                      ? '👀 관망모드 (실시간 구경 중)'
+                      : !isMyTurn
                       ? `${netCurrPlayer.name}님의 선택을 기다리는 중...`
                       : activeNetRoom.turnPhase === 'SHIFT'
                       ? '1단계: 화살표를 눌러 길 밀기'
@@ -2483,7 +2563,7 @@ export default function Page10() {
               )}
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                {(amILevelWinner || !roomPlayers.some(p => p.id === mySessionId)) && (
+                {(amILevelWinner || amISpectator || !roomPlayers.some(p => p.id === mySessionId)) && (
                   <button
                     type="button"
                     className="btn btn-secondary"
