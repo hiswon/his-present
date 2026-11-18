@@ -877,7 +877,6 @@ export default function Page10() {
         return room;
       }
 
-      // 게임 도중(PLAYING) 이탈 시: 한 명이라도 남아있으면 방을 비우지 않고 게임 지속
       if (room.status === 'PLAYING') {
         if (filteredPlayers.length === 0) {
           return createDefaultRoom(room.roomId);
@@ -2750,7 +2749,7 @@ export default function Page10() {
           <div className="maze-board-outer">
             <div className="maze-ancient-crest">
               {isPeekingRoad
-                ? '👁️ 뒷길 투시 중 (손을 떼면 말이 다시 보ifies)'
+                ? '👁️ 뒷길 투시 중 (손을 떼면 말이 다시 보입니다)'
                 : '⚜️ AMAZING LABYRINTH · 말을 꾹 누르면 뒷길 확인 ⚜️'}
             </div>
 
