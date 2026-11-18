@@ -1,6 +1,6 @@
 // src/firebase.ts
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getDatabase } from 'firebase/database'; // 👈 Firestore 대신 getDatabase 임포트
 
 const firebaseConfig = {
   apiKey: "AIzaSyCHeBnQDWGjL0t1hbAexa0LaPugUoVfu48",
@@ -14,4 +14,4 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const db = getDatabase(app); // 변수명을 편의상 db로 유지하거나 rtdb 등으로 export 하세요

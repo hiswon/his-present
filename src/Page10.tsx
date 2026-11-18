@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  collection,
-  doc,
-  onSnapshot,
-  runTransaction,
-  updateDoc,
-  setDoc,
-  getDoc,
-} from 'firebase/firestore';
-import { db } from './firebase'; // 경로에 맞게 수정하세요
+  ref,
+  onValue,
+  set,
+  update,
+  get,
+  runTransaction
+} from 'firebase/database';
+import { db } from './firebase'; // 본인의 Realtime Database 설정 파일 경로에 맞게 수정하세요
 import './Page10.css';
 
 // 방향: [상(Top), 우(Right), 하(Bottom), 좌(Left)]
@@ -32,7 +31,7 @@ interface BoardTile {
 }
 
 interface LabyrinthPlayer {
-  id: string; // 단독게임은 문자열 변환, 넷게임은 세션 고유 ID
+  id: string;
   name: string;
   color: string;
   row: number;
@@ -61,22 +60,21 @@ interface ShiftingState {
   active: boolean;
 }
 
-// Firestore 방 데이터 구조
 interface NetRoomData {
-  roomId: number; // 1 ~ 4
+  roomId: number;
   status: 'EMPTY' | 'WAITING' | 'PLAYING' | 'LEVEL_CLEAR';
   players: LabyrinthPlayer[];
   waitlist: WaitlistPlayer[];
-  baseCards: number; // 방장이 설정한 기본 카드 수
-  baseTimeout: number; // 방장이 설정한 기본 제한시간 (15 ~ 100초)
-  level: number; // 1 ~ 5 레벨
-  boardFlat: string; // Firestore 중첩 배열 제한 회피용 JSON 직렬화
+  baseCards: number;
+  baseTimeout: number;
+  level: number;
+  boardFlat: string;
   spareTile: BoardTile | null;
   currentPlayerIdx: number;
   turnPhase: 'SHIFT' | 'MOVE';
   forbiddenArrowId: string | null;
   lastPushedArrowId: string | null;
-  turnDeadline: number | null; // 타임아웃 만료 타임스탬프 (ms)
+  turnDeadline: number | null;
   levelWinnerId: string | null;
   lastActionNotice: string;
 }
@@ -204,7 +202,6 @@ function findReachablePaths(
   return paths;
 }
 
-// 레벨에 따라 미로 난이도(직선/T자 감소, 코너 L타일 증가) 조절
 function createInitialBoard(
   treasurePool: TreasureItem[],
   level = 1
@@ -227,7 +224,6 @@ function createInitialBoard(
     { r: 6, c: 4, rot: 2 },
   ];
 
-  // 총 34개 가동 타일: 레벨이 높아질수록 T타일(삼거리)이 줄고 L타일(꺾임)이 늘어 경로 예측이 까다로워짐
   const tCount = Math.max(2, 7 - level);
   const iCount = Math.max(8, 13 - level);
   const lCount = 34 - tCount - iCount;
@@ -328,21 +324,17 @@ function createDefaultRoom(roomId: number): NetRoomData {
   };
 }
 
-// 현재 레벨에 따른 카드 수 계산 (최대 6개까지 난이도 상승)
 function getLevelCardCount(baseCards: number, level: number): number {
   return Math.min(6, baseCards + (level - 1));
 }
 
-// 현재 레벨에 따른 타임아웃 시간 계산 (레벨당 10초 차감, 최소 15초)
 function getLevelTimeoutSeconds(baseTimeout: number, level: number): number {
   return Math.max(15, baseTimeout - (level - 1) * 10);
 }
 
 export default function Page10() {
-  // 최상위 모드: HOME(단독/넷 선택) | SOLO(기존 단독게임) | NET_LOBBY(4개 방) | NET_ROOM(방 대기/플레이)
   const [appMode, setAppMode] = useState<'HOME' | 'SOLO' | 'NET_LOBBY' | 'NET_ROOM'>('HOME');
 
-  // 내 클라이언트 세션 고유 ID (새로고침해도 유지)
   const [mySessionId] = useState<string>(() => {
     const saved = sessionStorage.getItem('labyrinth_net_uid');
     if (saved) return saved;
@@ -351,7 +343,6 @@ export default function Page10() {
     return generated;
   });
 
-  // ---------------- [넷게임 전용 상태] ----------------
   const [rooms, setRooms] = useState<NetRoomData[]>([1, 2, 3, 4].map(createDefaultRoom));
   const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
   const [joinModalRoom, setJoinModalRoom] = useState<NetRoomData | null>(null);
@@ -359,7 +350,6 @@ export default function Page10() {
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const timeoutHandledRef = useRef<number | null>(null);
 
-  // ---------------- [단독게임 기존 상태] ----------------
   const [gameState, setGameState] = useState<'SETUP' | 'READY' | 'PLAYING' | 'GAME_OVER'>('SETUP');
   const [players, setPlayers] = useState<LabyrinthPlayer[]>([
     {
@@ -488,37 +478,32 @@ export default function Page10() {
     } catch {}
   };
 
-  // =========================================================================
-  // Firebase Firestore 4개 방 실시간 구독 및 초기화
-  // =========================================================================
   useEffect(() => {
     if (appMode !== 'NET_LOBBY' && appMode !== 'NET_ROOM') return;
 
-    // 1~4번 방 문서가 없으면 초기 생성
     const ensureRoomsExist = async () => {
       for (const id of [1, 2, 3, 4]) {
-        const roomRef = doc(db, 'labyrinth_rooms', `room_${id}`);
-        const snap = await getDoc(roomRef);
+        const roomRef = ref(db, `labyrinth_rooms/room_${id}`);
+        const snap = await get(roomRef);
         if (!snap.exists()) {
-          await setDoc(roomRef, createDefaultRoom(id));
+          await set(roomRef, createDefaultRoom(id));
         }
       }
     };
     ensureRoomsExist();
 
-    const unsub = onSnapshot(collection(db, 'labyrinth_rooms'), (snapshot) => {
-      const updatedMap = new Map<number, NetRoomData>();
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as NetRoomData;
-        if (data && data.roomId >= 1 && data.roomId <= 4) {
-          updatedMap.set(data.roomId, data);
-        }
-      });
+    const roomsRef = ref(db, 'labyrinth_rooms');
+    const unsubscribe = onValue(roomsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
 
-      setRooms([1, 2, 3, 4].map((id) => updatedMap.get(id) || createDefaultRoom(id)));
+      const loadedRooms: NetRoomData[] = [1, 2, 3, 4].map((id) => {
+        return data[`room_${id}`] || createDefaultRoom(id);
+      });
+      setRooms(loadedRooms);
     });
 
-    return () => unsub();
+    return () => unsubscribe();
   }, [appMode]);
 
   const activeNetRoom =
@@ -526,7 +511,6 @@ export default function Page10() {
       ? rooms.find((r) => r.roomId === selectedRoomId) || null
       : null;
 
-  // 넷게임 턴 타이머 카운트다운 및 타임아웃 자동 턴 넘김
   useEffect(() => {
     if (appMode !== 'NET_ROOM' || !activeNetRoom || activeNetRoom.status !== 'PLAYING') {
       setRemainingSeconds(0);
@@ -538,7 +522,6 @@ export default function Page10() {
       const diff = Math.max(0, Math.ceil((activeNetRoom.turnDeadline - Date.now()) / 1000));
       setRemainingSeconds(diff);
 
-      // 타임아웃 발생 시 현재 턴 플레이어(또는 방장)가 다음 사람으로 턴 강제 넘김
       if (diff === 0 && timeoutHandledRef.current !== activeNetRoom.turnDeadline) {
         const currP = activeNetRoom.players[activeNetRoom.currentPlayerIdx];
         const amIResponsible =
@@ -554,9 +537,6 @@ export default function Page10() {
     return () => window.clearInterval(timer);
   }, [appMode, activeNetRoom, mySessionId]);
 
-  // =========================================================================
-  // 넷게임 방 입장 / 설정 변경 / 시작 / 레벨업 / 퇴장 로직
-  // =========================================================================
   const handleEnterRoomSubmit = async () => {
     if (!joinModalRoom) return;
     const trimmedName = joinPlayerName.trim();
@@ -565,28 +545,24 @@ export default function Page10() {
       return;
     }
 
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${joinModalRoom.roomId}`);
+    const roomRef = ref(db, `labyrinth_rooms/room_${joinModalRoom.roomId}`);
 
     try {
-      // 수정 후 ('LEVEL_CLEAR' 등의 상태 타입 호환을 위해 as string 사용 또는 타입 확장)
       let joinResultType: string = 'PLAYER';
 
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(roomRef);
-        const room = snap.exists()
-          ? (snap.data() as NetRoomData)
-          : createDefaultRoom(joinModalRoom.roomId);
+      await runTransaction(roomRef, (roomData) => {
+        const room: NetRoomData = roomData || createDefaultRoom(joinModalRoom.roomId);
+        if (!room.players) room.players = [];
+        if (!room.waitlist) room.waitlist = [];
 
-        // 이미 방에 들어가 있는 경우
         if (
-          room.players.some((p) => p.id === mySessionId) ||
-          room.waitlist.some((w) => w.id === mySessionId)
+          room.players.some((p: LabyrinthPlayer) => p.id === mySessionId) ||
+          room.waitlist.some((w: WaitlistPlayer) => w.id === mySessionId)
         ) {
           joinResultType = 'REJOIN';
-          return;
+          return room;
         }
 
-        // 빈방이거나 대기중(4명 미만)인 경우 -> 정식 플레이어로 입장
         if ((room.status === 'EMPTY' || room.status === 'WAITING') && room.players.length < 4) {
           const idx = room.players.length;
           const corner = START_CORNERS[idx];
@@ -602,18 +578,14 @@ export default function Page10() {
             collected: [],
           };
 
-          tx.set(roomRef, {
-            ...room,
-            status: 'WAITING',
-            players: [...room.players, newPlayer],
-          });
+          room.status = 'WAITING';
+          room.players.push(newPlayer);
           joinResultType = 'PLAYER';
         } else {
-          // 정원이 찼거나 게임 진행 중이면 예약 대기열에 등록
-          const updatedWaitlist = [...room.waitlist, { id: mySessionId, name: trimmedName }];
-          tx.update(roomRef, { waitlist: updatedWaitlist });
+          room.waitlist.push({ id: mySessionId, name: trimmedName });
           joinResultType = 'WAITLIST';
         }
+        return room;
       });
 
       setSelectedRoomId(joinModalRoom.roomId);
@@ -626,23 +598,26 @@ export default function Page10() {
       }
     } catch (err) {
       console.error(err);
-      alert('방 입장 중 오류가 발생했습니다. Firebase 설정을 확인해주세요.');
+      alert('방 입장 중 오류가 발생했습니다.');
     }
   };
 
-  // 방장(첫 번째 사람)의 카드 수 & 타임아웃 설정 업데이트
   const updateRoomSettings = async (newCards: number, newTimeout: number) => {
     if (!activeNetRoom) return;
     const clampedTimeout = Math.min(100, Math.max(15, newTimeout));
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${activeNetRoom.roomId}`);
-    await updateDoc(roomRef, {
+    const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
+    await update(roomRef, {
       baseCards: newCards,
       baseTimeout: clampedTimeout,
     });
   };
 
-  // 레벨 시작 (최초 시작 및 다음 레벨 승계 공통)
-  const startNetLevel = async (room: NetRoomData, targetLevel: number, nextPlayersRaw: LabyrinthPlayer[], nextWaitlist: WaitlistPlayer[]) => {
+  const startNetLevel = async (
+    room: NetRoomData,
+    targetLevel: number,
+    nextPlayersRaw: LabyrinthPlayer[],
+    nextWaitlist: WaitlistPlayer[]
+  ) => {
     const levelCards = getLevelCardCount(room.baseCards, targetLevel);
     const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, targetLevel);
 
@@ -667,8 +642,8 @@ export default function Page10() {
       };
     });
 
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${room.roomId}`);
-    await updateDoc(roomRef, {
+    const roomRef = ref(db, `labyrinth_rooms/room_${room.roomId}`);
+    await update(roomRef, {
       status: 'PLAYING',
       level: targetLevel,
       players: initializedPlayers,
@@ -685,7 +660,6 @@ export default function Page10() {
     });
   };
 
-  // 대기실에서 첫 번째 사람이 시작 버튼 클릭
   const handleStartNetGameFromLobby = async () => {
     if (!activeNetRoom) return;
     if (activeNetRoom.players.length < 2) {
@@ -695,21 +669,17 @@ export default function Page10() {
     await startNetLevel(activeNetRoom, 1, activeNetRoom.players, activeNetRoom.waitlist);
   };
 
-  // 레벨 종료 후 다음 레벨 진행 (요구사항 8, 9, 10 처리)
   const handleAdvanceToNextLevel = async () => {
     if (!activeNetRoom) return;
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${activeNetRoom.roomId}`);
+    const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
 
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(roomRef);
-      if (!snap.exists()) return;
-      const room = snap.data() as NetRoomData;
+    await runTransaction(roomRef, (roomData) => {
+      if (!roomData) return roomData;
+      const room = roomData as NetRoomData;
 
       const nextLevel = room.level + 1;
       if (nextLevel > 5) {
-        // 5레벨 모두 완료 시 방 초기화
-        tx.set(roomRef, createDefaultRoom(room.roomId));
-        return;
+        return createDefaultRoom(room.roomId);
       }
 
       const currentPlayers = [...room.players];
@@ -718,7 +688,6 @@ export default function Page10() {
       let remainingWaitlist: WaitlistPlayer[] = [];
 
       if (currentPlayers.length + waitlist.length <= 4) {
-        // 정원(4명) 이하이면 기존 인원 + 예약 인원 모두 함께 진행
         const convertedWaiters: LabyrinthPlayer[] = waitlist.map((w) => ({
           id: w.id,
           name: w.name,
@@ -733,7 +702,6 @@ export default function Page10() {
         nextParticipants = [...currentPlayers, ...convertedWaiters];
         remainingWaitlist = [];
       } else {
-        // 정원(4명) 초과 시: 1등만 남고 2~4등은 빠지며 예약 인원으로 최대 4명까지 채움
         const champion = currentPlayers.find((p) => p.id === room.levelWinnerId);
         const retained = champion ? [champion] : [];
         const slotsAvailable = 4 - retained.length;
@@ -756,7 +724,6 @@ export default function Page10() {
         remainingWaitlist = waitlist.slice(slotsAvailable);
       }
 
-      // 참가자가 1명만 남았을 경우 대기 상태로 전환
       if (nextParticipants.length < 2) {
         const soloRetained = nextParticipants.map((p, idx) => ({
           ...p,
@@ -768,18 +735,15 @@ export default function Page10() {
           targetStack: [],
           collected: [],
         }));
-        tx.update(roomRef, {
-          status: soloRetained.length === 0 ? 'EMPTY' : 'WAITING',
-          level: nextLevel,
-          players: soloRetained,
-          waitlist: remainingWaitlist,
-          levelWinnerId: null,
-          turnDeadline: null,
-        });
-        return;
+        room.status = soloRetained.length === 0 ? 'EMPTY' : 'WAITING';
+        room.level = nextLevel;
+        room.players = soloRetained;
+        room.waitlist = remainingWaitlist;
+        room.levelWinnerId = null;
+        room.turnDeadline = null;
+        return room;
       }
 
-      // 다음 레벨 보드 생성 및 시작
       const levelCards = getLevelCardCount(room.baseCards, nextLevel);
       const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, nextLevel);
       const totalNeeded = nextParticipants.length * levelCards;
@@ -801,89 +765,77 @@ export default function Page10() {
         };
       });
 
-      tx.update(roomRef, {
-        status: 'PLAYING',
-        level: nextLevel,
-        players: initializedPlayers,
-        waitlist: remainingWaitlist,
-        boardFlat: JSON.stringify(initialBoard),
-        spareTile: spare,
-        currentPlayerIdx: 0,
-        turnPhase: 'SHIFT',
-        forbiddenArrowId: null,
-        lastPushedArrowId: null,
-        turnDeadline: Date.now() + levelTimeout * 1000,
-        levelWinnerId: null,
-        lastActionNotice: `🔥 레벨 ${nextLevel} 돌입! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`,
-      });
+      room.status = 'PLAYING';
+      room.level = nextLevel;
+      room.players = initializedPlayers;
+      room.waitlist = remainingWaitlist;
+      room.boardFlat = JSON.stringify(initialBoard);
+      room.spareTile = spare;
+      room.currentPlayerIdx = 0;
+      room.turnPhase = 'SHIFT';
+      room.forbiddenArrowId = null;
+      room.lastPushedArrowId = null;
+      room.turnDeadline = Date.now() + levelTimeout * 1000;
+      room.levelWinnerId = null;
+      room.lastActionNotice = `🔥 레벨 ${nextLevel} 돌입! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`;
+      
+      return room;
     });
   };
 
-  // 방 나가기 (대기중, 예약중, 레벨업 전 1등 방나감 모두 처리)
   const handleLeaveNetRoom = async () => {
     if (!activeNetRoom) {
       setAppMode('NET_LOBBY');
       return;
     }
 
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${activeNetRoom.roomId}`);
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(roomRef);
-      if (!snap.exists()) return;
-      const room = snap.data() as NetRoomData;
+    const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
+    await runTransaction(roomRef, (roomData) => {
+      if (!roomData) return roomData;
+      const room = roomData as NetRoomData;
 
-      const filteredPlayers = room.players.filter((p) => p.id !== mySessionId);
-      const filteredWaitlist = room.waitlist.filter((w) => w.id !== mySessionId);
+      const filteredPlayers = (room.players || []).filter((p) => p.id !== mySessionId);
+      const filteredWaitlist = (room.waitlist || []).filter((w) => w.id !== mySessionId);
 
-      // 대기방에서 모두 나간 경우 빈방 처리
       if (room.status === 'WAITING' && filteredPlayers.length === 0) {
-        tx.set(roomRef, createDefaultRoom(room.roomId));
-        return;
+        return createDefaultRoom(room.roomId);
       }
 
-      // 레벨 종료 화면에서 1등이 방나감을 눌렀을 때
       if (room.status === 'LEVEL_CLEAR') {
         const newWinnerId = room.levelWinnerId === mySessionId ? null : room.levelWinnerId;
         if (filteredPlayers.length === 0 && filteredWaitlist.length === 0) {
-          tx.set(roomRef, createDefaultRoom(room.roomId));
-        } else {
-          tx.update(roomRef, {
-            players: filteredPlayers,
-            waitlist: filteredWaitlist,
-            levelWinnerId: newWinnerId,
-          });
+          return createDefaultRoom(room.roomId);
         }
-        return;
+        room.players = filteredPlayers;
+        room.waitlist = filteredWaitlist;
+        room.levelWinnerId = newWinnerId;
+        return room;
       }
 
-      // 플레이 중 이탈한 경우
       if (room.status === 'PLAYING' && filteredPlayers.length < 2) {
-        tx.set(roomRef, createDefaultRoom(room.roomId));
-        return;
+        return createDefaultRoom(room.roomId);
       }
 
       const adjustedIdx =
         filteredPlayers.length > 0 ? room.currentPlayerIdx % filteredPlayers.length : 0;
 
-      tx.update(roomRef, {
-        players: filteredPlayers,
-        waitlist: filteredWaitlist,
-        currentPlayerIdx: adjustedIdx,
-      });
+      room.players = filteredPlayers;
+      room.waitlist = filteredWaitlist;
+      room.currentPlayerIdx = adjustedIdx;
+      return room;
     });
 
     setSelectedRoomId(null);
     setAppMode('NET_LOBBY');
   };
 
-  // 타임아웃 발생 시 다음 플레이어로 턴 넘김
   const handleNetTurnTimeout = async (room: NetRoomData) => {
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${room.roomId}`);
+    const roomRef = ref(db, `labyrinth_rooms/room_${room.roomId}`);
     const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, room.level);
     const nextIdx = (room.currentPlayerIdx + 1) % room.players.length;
     const timedOutName = room.players[room.currentPlayerIdx]?.name || '탐험가';
 
-    await updateDoc(roomRef, {
+    await update(roomRef, {
       currentPlayerIdx: nextIdx,
       turnPhase: 'SHIFT',
       turnDeadline: Date.now() + levelTimeout * 1000,
@@ -891,9 +843,6 @@ export default function Page10() {
     });
   };
 
-  // =========================================================================
-  // 넷게임 플레이 액션 (여분 타일 회전 / 길 밀기 / 말 이동)
-  // =========================================================================
   const handleNetRotateSpare = async (delta: number) => {
     if (!activeNetRoom || !activeNetRoom.spareTile || activeNetRoom.turnPhase !== 'SHIFT') return;
     const currP = activeNetRoom.players[activeNetRoom.currentPlayerIdx];
@@ -903,8 +852,8 @@ export default function Page10() {
     }
 
     playSound('rotate');
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${activeNetRoom.roomId}`);
-    await updateDoc(roomRef, {
+    const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
+    await update(roomRef, {
       spareTile: {
         ...activeNetRoom.spareTile,
         rotation: (activeNetRoom.spareTile.rotation + delta + 4) % 4,
@@ -961,8 +910,8 @@ export default function Page10() {
       return { ...p, row, col };
     });
 
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${activeNetRoom.roomId}`);
-    await updateDoc(roomRef, {
+    const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
+    await update(roomRef, {
       boardFlat: JSON.stringify(nextBoard),
       spareTile: pushedOutTile,
       players: updatedPlayers,
@@ -1037,11 +986,11 @@ export default function Page10() {
         )
       : netBoard;
 
-    const roomRef = doc(db, 'labyrinth_rooms', `room_${activeNetRoom.roomId}`);
+    const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
 
     if (isLevelWon) {
       playSound('win');
-      await updateDoc(roomRef, {
+      await update(roomRef, {
         boardFlat: JSON.stringify(nextBoard),
         players: updatedPlayers,
         status: 'LEVEL_CLEAR',
@@ -1059,7 +1008,7 @@ export default function Page10() {
     const levelTimeout = getLevelTimeoutSeconds(activeNetRoom.baseTimeout, activeNetRoom.level);
     const nextIdx = (currIdx + 1) % updatedPlayers.length;
 
-    await updateDoc(roomRef, {
+    await update(roomRef, {
       boardFlat: JSON.stringify(nextBoard),
       players: updatedPlayers,
       currentPlayerIdx: nextIdx,
@@ -1071,9 +1020,6 @@ export default function Page10() {
     });
   };
 
-  // =========================================================================
-  // 공용 길게 누르기 (뒷길 투시) 핸들러
-  // =========================================================================
   const startLongPressPeek = () => {
     didLongPressRef.current = false;
     if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
@@ -1091,9 +1037,6 @@ export default function Page10() {
     if (isPeekingRoad) setIsPeekingRoad(false);
   };
 
-  // =========================================================================
-  // 단독게임 기존 핸들러들
-  // =========================================================================
   const addPlayer = () => {
     if (!inputName.trim()) return;
     if (players.length >= 4) {
@@ -1403,9 +1346,6 @@ export default function Page10() {
     }
   };
 
-  // =========================================================================
-  // 렌더링 보조 함수 (단독 / 넷게임 공용 타일 그래픽)
-  // =========================================================================
   const getCellShiftStyle = (r: number, c: number): React.CSSProperties => {
     if (!shiftingState) return {};
     const { arrow, active } = shiftingState;
@@ -1568,16 +1508,13 @@ export default function Page10() {
     oppositeId: `RIGHT-${idx}`,
   }));
 
-  // =========================================================================
-  // 1. 초기 진입 화면 (단독게임 / 넷게임 선택)
-  // =========================================================================
   if (appMode === 'HOME') {
     return (
       <div className="lab-container" style={{ background: PLAYER_BG_COLORS[0] }}>
         <div className="setup-card home-entry-card">
           <div className="home-castle-icon">🏰</div>
           <h1 className="setup-title">어메이징 라비린스</h1>
-          <p className="home-subtitle">움직이는 고대 미로 속에서 성경의 보물을 찾아라!</p>
+          <p className="home-subtitle">움직이는 고대 미로 속에서 성경의 보원을 찾아라!</p>
 
           <div className="mode-select-grid">
             <button
@@ -1608,9 +1545,6 @@ export default function Page10() {
     );
   }
 
-  // =========================================================================
-  // 2. 넷게임 로비 (4개의 방 상태 및 입장/예약)
-  // =========================================================================
   if (appMode === 'NET_LOBBY') {
     return (
       <div className="lab-container" style={{ background: PLAYER_BG_COLORS[0] }}>
@@ -1653,7 +1587,6 @@ export default function Page10() {
                   key={room.roomId}
                   className={`net-room-card ${statusClass}`}
                   onClick={() => {
-                    // 이미 내가 참여 중이거나 예약된 방이면 바로 진입
                     if (
                       room.players.some((p) => p.id === mySessionId) ||
                       room.waitlist.some((w) => w.id === mySessionId)
@@ -1716,7 +1649,6 @@ export default function Page10() {
           </div>
         </div>
 
-        {/* 방 클릭 시 이름 입력 모달 */}
         {joinModalRoom && (
           <div className="modal-overlay" onClick={() => setJoinModalRoom(null)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -1769,15 +1701,11 @@ export default function Page10() {
     );
   }
 
-  // =========================================================================
-  // 3. 넷게임 방 내부 (대기방 설정/시작 & 실시간 플레이 & 레벨 클리어 모달)
-  // =========================================================================
   if (appMode === 'NET_ROOM' && activeNetRoom) {
     const isHost = activeNetRoom.players[0]?.id === mySessionId;
     const amIWaitlisted = activeNetRoom.waitlist.some((w) => w.id === mySessionId);
     const amIPlaying = activeNetRoom.players.some((p) => p.id === mySessionId);
 
-    // 3-A. 대기중 (WAITING / EMPTY) 화면
     if (activeNetRoom.status === 'WAITING' || activeNetRoom.status === 'EMPTY') {
       return (
         <div className="lab-container" style={{ background: PLAYER_BG_COLORS[0] }}>
@@ -1800,7 +1728,6 @@ export default function Page10() {
               🏰 넷게임 대기실 (총 5레벨 도전)
             </h1>
 
-            {/* 첫 번째 사람(방장)만 설정 가능한 게임카드수 및 타임아웃 시간 */}
             <div className="setting-section">
               <label className="setting-label">
                 💎 시작 보물 카드 수 {isHost ? '(방장 설정 가능)' : '(방장이 설정 중)'}
@@ -1882,7 +1809,6 @@ export default function Page10() {
       );
     }
 
-    // 3-B. 넷게임 플레이 중 (PLAYING) 또는 레벨 종료 (LEVEL_CLEAR)
     const netBoard: BoardTile[][] = JSON.parse(activeNetRoom.boardFlat || '[]');
     const netCurrIdx = activeNetRoom.currentPlayerIdx;
     const netCurrPlayer = activeNetRoom.players[netCurrIdx];
@@ -1920,7 +1846,6 @@ export default function Page10() {
         )}
 
         <div className="play-wrapper compact-tablet-mode">
-          {/* 상단 상태바 + 레벨 + 타이머 */}
           <div className="game-header compact-header">
             <div className="net-level-timer-box">
               <span className="net-level-badge">Lv.{activeNetRoom.level}/5</span>
@@ -1965,7 +1890,6 @@ export default function Page10() {
             </button>
           </div>
 
-          {/* 예약 대기자 안내 배너 */}
           {(amIWaitlisted || activeNetRoom.waitlist.length > 0) && (
             <div className="net-waitlist-strip">
               {amIWaitlisted
@@ -1976,7 +1900,6 @@ export default function Page10() {
             </div>
           )}
 
-          {/* 7x7 미로 보드 */}
           {netBoard.length > 0 && activeNetRoom.spareTile && (
             <div className="maze-board-outer">
               <div className="maze-ancient-crest">
@@ -1984,7 +1907,6 @@ export default function Page10() {
                   `⚜️ 제 ${activeNetRoom.roomId}방 · 레벨 ${activeNetRoom.level} ⚜️`}
               </div>
 
-              {/* 상단 화살표 */}
               <div className="arrow-row-horizontal">
                 <div className="corner-compass">🧭</div>
                 {Array.from({ length: 7 }).map((_, c) => {
@@ -2145,7 +2067,6 @@ export default function Page10() {
                 </div>
               </div>
 
-              {/* 하단 화살표 */}
               <div className="arrow-row-horizontal">
                 <div className="corner-compass">⚜️</div>
                 {Array.from({ length: 7 }).map((_, c) => {
@@ -2174,7 +2095,6 @@ export default function Page10() {
             </div>
           )}
 
-          {/* 하단 도크 */}
           {activeNetRoom.spareTile && netCurrPlayer && (
             <div
               className="bottom-compact-dock"
@@ -2241,8 +2161,6 @@ export default function Page10() {
                   </span>
                 </div>
 
-                {/* 내 목표 보물 표시 (참가 중인 경우 내 목표를, 관전/예약 중이면 현재 턴 플레이어 목표 표시) */}
-                {/* 넷게임 하단 도크 내 목표 보물 표시 부분 수정 */}
                 {(() => {
                   const myPlayerObj = activeNetRoom.players.find((p) => p.id === mySessionId);
                   const displayOwner = myPlayerObj || netCurrPlayer;
@@ -2291,13 +2209,11 @@ export default function Page10() {
                     </div>
                   );
                 })()}
-
               </div>
             </div>
           )}
         </div>
 
-        {/* 레벨 클리어 모달 (다음 레벨 진출 / 예약자 합류 / 1등 방나감 선택) */}
         {activeNetRoom.status === 'LEVEL_CLEAR' && (
           <div className="modal-overlay">
             <div className="modal-content">
@@ -2354,7 +2270,6 @@ export default function Page10() {
               )}
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                {/* 1등이거나 관전/퇴장 대상자일 경우 방 나가기 버튼 제공 */}
                 {(amILevelWinner || !amIPlaying) && (
                   <button
                     type="button"
@@ -2384,9 +2299,6 @@ export default function Page10() {
     );
   }
 
-  // =========================================================================
-  // 4. 단독게임 (SOLO) - 기존 화면 그대로 유지 + 상단 홈으로 버튼만 추가
-  // =========================================================================
   const currentPlayer = players[currentPlayerIdx];
   const currentTarget = currentPlayer?.targetStack[0] || null;
 
@@ -2416,7 +2328,6 @@ export default function Page10() {
         </div>
       )}
 
-      {/* 1. 게임 설정 화면 */}
       {gameState === 'SETUP' && (
         <div className="setup-card">
           <div style={{ marginBottom: '8px' }}>
@@ -2514,7 +2425,6 @@ export default function Page10() {
         </div>
       )}
 
-      {/* 2. 순서 정하기 화면 */}
       {gameState === 'READY' && (
         <div className="order-panel">
           <div className="order-header">
@@ -2579,7 +2489,6 @@ export default function Page10() {
         </div>
       )}
 
-      {/* 3. 메인 라비린스 플레이 화면 */}
       {gameState === 'PLAYING' && currentPlayer && spareTile && (
         <div className="play-wrapper compact-tablet-mode">
           <div className="game-header compact-header">
@@ -2915,7 +2824,6 @@ export default function Page10() {
         </div>
       )}
 
-      {/* 4. 최종 우승 축하 모달 */}
       {gameState === 'GAME_OVER' && winner && (
         <div className="modal-overlay">
           <div className="confetti-layer">
