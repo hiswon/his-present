@@ -78,6 +78,7 @@ interface NetRoomData {
   levelWinnerId: string | null;
   lastActionNotice: string;
   consecutiveTimeouts: number;
+  waitingSince?: number; // 대기실 진입/변경 시각
 }
 
 interface HallOfFameRecord {
@@ -332,6 +333,7 @@ function createDefaultRoom(roomId: number): NetRoomData {
     levelWinnerId: null,
     lastActionNotice: '',
     consecutiveTimeouts: 0,
+    waitingSince: undefined,
   };
 }
 
@@ -469,7 +471,6 @@ export default function Page10() {
     } catch {}
   };
 
-  // 🏆 명예의 전당 저장 함수 (각각 최대 10명)
   const saveHallOfFameRecord = (type: 'SOLO' | 'NET', record: { name: string; scoreOrLevel: string }) => {
     const key = type === 'SOLO' ? 'labyrinth_hof_solo' : 'labyrinth_hof_net';
     try {
@@ -480,7 +481,7 @@ export default function Page10() {
         scoreOrLevel: record.scoreOrLevel,
         date: new Date().toLocaleDateString(),
       };
-      const updated = [newEntry, ...existing].slice(0, 10); // 최대 10명 유지
+      const updated = [newEntry, ...existing].slice(0, 10);
       localStorage.setItem(key, JSON.stringify(updated));
     } catch (e) {
       console.error(e);
@@ -537,29 +538,46 @@ export default function Page10() {
       ? rooms.find((r) => r.roomId === selectedRoomId) || null
       : null;
 
-  // 넷게임 턴 제한시간 및 2회 연속 타임아웃 감지 로직
+  // ⏰ 대기실(WAITING) 5분 초과 감지 및 게임중 턴 타임아웃 감지 로직
   useEffect(() => {
-    if (appMode !== 'NET_ROOM' || !activeNetRoom || activeNetRoom.status !== 'PLAYING') {
+    if (appMode !== 'NET_ROOM' || !activeNetRoom) {
       setRemainingSeconds(0);
       return;
     }
 
-    const timer = window.setInterval(() => {
-      if (!activeNetRoom.turnDeadline) return;
-      const diff = Math.max(0, Math.ceil((activeNetRoom.turnDeadline - Date.now()) / 1000));
-      setRemainingSeconds(diff);
+    const timer = window.setInterval(async () => {
+      const now = Date.now();
 
-      if (diff === 0 && timeoutHandledRef.current !== activeNetRoom.turnDeadline) {
-        const currP = activeNetRoom.players?.[activeNetRoom.currentPlayerIdx];
-        const amIResponsible =
-          currP?.id === mySessionId || activeNetRoom.players?.[0]?.id === mySessionId;
-
-        if (amIResponsible) {
-          timeoutHandledRef.current = activeNetRoom.turnDeadline;
-          handleNetTurnTimeout(activeNetRoom);
+      // 1) 대기실(WAITING) 상태에서 5분(300초) 이상 경과한 경우 자동 비우기
+      if (activeNetRoom.status === 'WAITING' && activeNetRoom.waitingSince) {
+        const elapsedSec = (now - activeNetRoom.waitingSince) / 1000;
+        if (elapsedSec >= 300) {
+          const roomRef = ref(db, `labyrinth_rooms/room_${activeNetRoom.roomId}`);
+          await set(roomRef, createDefaultRoom(activeNetRoom.roomId));
+          showToast('⏳ 대기 시간이 5분을 초과하여 방이 자동으로 비워졌습니다.', 'info');
+          setSelectedRoomId(null);
+          setAppMode('NET_LOBBY');
+          return;
         }
       }
-    }, 300);
+
+      // 2) 게임 플레이 중(PLAYING) 상태에서 턴 제한시간 초과 감지
+      if (activeNetRoom.status === 'PLAYING' && activeNetRoom.turnDeadline) {
+        const diff = Math.max(0, Math.ceil((activeNetRoom.turnDeadline - now) / 1000));
+        setRemainingSeconds(diff);
+
+        if (diff === 0 && timeoutHandledRef.current !== activeNetRoom.turnDeadline) {
+          const currP = activeNetRoom.players?.[activeNetRoom.currentPlayerIdx];
+          const amIResponsible =
+            currP?.id === mySessionId || activeNetRoom.players?.[0]?.id === mySessionId;
+
+          if (amIResponsible) {
+            timeoutHandledRef.current = activeNetRoom.turnDeadline;
+            handleNetTurnTimeout(activeNetRoom);
+          }
+        }
+      }
+    }, 500);
 
     return () => window.clearInterval(timer);
   }, [appMode, activeNetRoom, mySessionId]);
@@ -608,6 +626,10 @@ export default function Page10() {
 
           room.status = 'WAITING';
           room.players.push(newPlayer);
+          // 첫 번째 플레이어가 들어오거나 대기실이 갱신될 때 5분 타이머 기준점 기록
+          if (!room.waitingSince) {
+            room.waitingSince = Date.now();
+          }
           joinResultType = 'PLAYER';
         } else {
           room.waitlist.push({ id: mySessionId, name: trimmedName });
@@ -637,6 +659,7 @@ export default function Page10() {
     await update(roomRef, {
       baseCards: newCards,
       baseTimeout: clampedTimeout,
+      waitingSince: Date.now(), // 설정 변경 시 타이머 갱신
     });
   };
 
@@ -687,6 +710,7 @@ export default function Page10() {
       levelWinnerId: null,
       lastActionNotice: `🚀 레벨 ${targetLevel} 시작! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`,
       consecutiveTimeouts: 0,
+      waitingSince: null,
     });
   };
 
@@ -778,6 +802,7 @@ export default function Page10() {
         room.levelWinnerId = null;
         room.turnDeadline = null;
         room.consecutiveTimeouts = 0;
+        room.waitingSince = soloRetained.length > 0 ? Date.now() : undefined;
         return room;
       }
 
@@ -817,6 +842,7 @@ export default function Page10() {
       room.levelWinnerId = null;
       room.lastActionNotice = `🔥 레벨 ${nextLevel} 돌입! (보물 ${levelCards}개 · 제한시간 ${levelTimeout}초)`;
       room.consecutiveTimeouts = 0;
+      room.waitingSince = undefined;
       
       return room;
     });
@@ -863,6 +889,11 @@ export default function Page10() {
       room.players = filteredPlayers;
       room.waitlist = filteredWaitlist;
       room.currentPlayerIdx = adjustedIdx;
+      // 인원이 남아있다면 대기실 타이머 유지, 비었으면 리셋
+      if (filteredPlayers.length === 0) {
+        room.status = 'EMPTY';
+        room.waitingSince = undefined;
+      }
       return room;
     });
 
@@ -870,7 +901,6 @@ export default function Page10() {
     setAppMode('NET_LOBBY');
   };
 
-  // ⏰ 턴 시간 초과 처리 및 2회 이상 연속 방치 시 방 비우기
   const handleNetTurnTimeout = async (room: NetRoomData) => {
     const roomRef = ref(db, `labyrinth_rooms/room_${room.roomId}`);
     const levelTimeout = getLevelTimeoutSeconds(room.baseTimeout, room.level);
@@ -880,7 +910,6 @@ export default function Page10() {
 
     const nextTimeouts = (room.consecutiveTimeouts || 0) + 1;
 
-    // 아무도 활동하지 않고 2텀 이상 돌아가면 방을 비움
     if (nextTimeouts >= 2) {
       await set(roomRef, createDefaultRoom(room.roomId));
       showToast('⚠️ 활동이 감지되지 않아 방이 자동으로 비워졌습니다.', 'info');
@@ -976,7 +1005,7 @@ export default function Page10() {
       lastPushedArrowId: arrow.id,
       turnPhase: 'MOVE',
       lastActionNotice: `✨ ${currP.name}님이 미로를 밀었습니다! 이동할 칸을 선택하세요.`,
-      consecutiveTimeouts: 0, // 활동 감지 시 초기화
+      consecutiveTimeouts: 0,
     });
   };
 
@@ -1054,7 +1083,6 @@ export default function Page10() {
       playSound('win');
       speakKorean(`원더풀! 축하합니다! ${currP.name}님이 1등을 달성했습니다!`);
       
-      // 넷플레이 명예의 전당 저장 (가장 짧은 턴수 기준 정렬 가능하도록 레코드 기록)
       saveHallOfFameRecord('NET', {
         name: currP.name,
         scoreOrLevel: `Lv.${activeNetRoom.level} (총 ${currP.turnsTaken || 1}턴 완료)`,
@@ -1403,7 +1431,6 @@ export default function Page10() {
       playSound('win');
       speakKorean(`원더풀! 축하합니다! ${champ.name}님이 모든 보물을 찾고 우승했습니다!`);
 
-      // 단독 게임 명예의 전당 저장 (가장 적은 턴 수로 우승한 사람 기록)
       saveHallOfFameRecord('SOLO', {
         name: champ.name,
         scoreOrLevel: `보물 ${cardsPerPlayer}개 · 총 ${champ.turnsTaken || 1}턴 우승`,
@@ -1644,7 +1671,6 @@ export default function Page10() {
     );
   }
 
-  // 🏅 명예의 전당 화면 (단독 / 넷플레이 각각 10명)
   if (appMode === 'HALL_OF_FAME') {
     const soloRecords = getHallOfFameRecords('SOLO');
     const netRecords = getHallOfFameRecords('NET');
@@ -1665,7 +1691,6 @@ export default function Page10() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            {/* 단독 플레이 명예의 전당 */}
             <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <h3 style={{ margin: '0 0 8px', fontSize: '15px', color: '#1e3a8a', textAlign: 'center' }}>
                 🎮 단독 플레이 TOP 10
@@ -1684,7 +1709,6 @@ export default function Page10() {
               )}
             </div>
 
-            {/* 넷플레이 명예의 전당 */}
             <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <h3 style={{ margin: '0 0 8px', fontSize: '15px', color: '#b45309', textAlign: 'center' }}>
                 🌐 넷플레이 TOP 10
@@ -1907,7 +1931,7 @@ export default function Page10() {
                 🚪 방 나가기
               </button>
               <span className="room-status-pill waiting">
-                제 {activeNetRoom.roomId}방 · 대기중 ({roomPlayers.length}/4명)
+                제 {activeNetRoom.roomId}방 · 대기중 (5분 내 미시작 시 자동 비워짐)
               </span>
             </div>
 
