@@ -967,3 +967,301 @@
     opacity: 0.2;
   }
 }
+
+/* =========================================================
+   초기 모드 선택 화면 (단독게임 / 넷게임)
+   ========================================================= */
+.home-entry-card {
+  text-align: center;
+  margin-top: 8vh;
+  padding: 32px 22px;
+}
+
+.home-castle-icon {
+  font-size: 56px;
+  margin-bottom: 6px;
+}
+
+.home-subtitle {
+  color: #64748b;
+  font-size: 14px;
+  margin: -8px 0 24px;
+}
+
+.mode-select-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.mode-select-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 14px;
+  border-radius: 18px;
+  border: 2.5px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.mode-select-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+}
+
+.mode-select-btn.solo {
+  border-color: #93c5fd;
+  background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
+}
+
+.mode-select-btn.net {
+  border-color: #6ee7b7;
+  background: linear-gradient(180deg, #ffffff 0%, #ecfdf5 100%);
+}
+
+.mode-icon {
+  font-size: 38px;
+}
+
+.mode-select-btn strong {
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.mode-desc {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+/* =========================================================
+   넷게임 4개 방 로비 스타일
+   ========================================================= */
+.net-lobby-container {
+  max-width: 720px;
+  margin: 10px auto;
+}
+
+.net-lobby-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 12px 16px;
+  border-radius: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.net-rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.net-room-card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 16px;
+  border: 2.5px solid #e2e8f0;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.net-room-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.1);
+}
+
+.net-room-card.empty {
+  border-color: #86efac;
+}
+
+.net-room-card.waiting {
+  border-color: #fde047;
+}
+
+.net-room-card.playing {
+  border-color: #fca5a5;
+}
+
+.room-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.room-number-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.room-status-pill {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.room-status-pill.empty {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.room-status-pill.waiting {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.room-status-pill.playing {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.room-rules-info {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  background: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.room-members-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.room-members-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.room-members-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 26px;
+  align-items: center;
+}
+
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+}
+
+.member-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.empty-member-text {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.room-waitlist-box {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.room-enter-cta {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #2563eb;
+  padding-top: 4px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.waiting-host-banner {
+  text-align: center;
+  padding: 14px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+/* =========================================================
+   넷게임 플레이 중 레벨 & 타이머 뱃지
+   ========================================================= */
+.net-level-timer-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.net-level-badge {
+  background: #0f172a;
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 4px 7px;
+  border-radius: 8px;
+}
+
+.net-timer-badge {
+  background: #ffffff;
+  color: #059669;
+  border: 1.5px solid #10b981;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 3px 7px;
+  border-radius: 8px;
+}
+
+.net-timer-badge.urgent {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #ef4444;
+  animation: timer-blink 0.6s infinite alternate;
+}
+
+@keyframes timer-blink {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06);
+  }
+}
+
+.net-waitlist-strip {
+  background: rgba(30, 64, 175, 0.9);
+  color: #ffffff;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
