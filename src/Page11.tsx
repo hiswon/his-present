@@ -101,24 +101,24 @@ const SITUATION_LINES = {
     `찰칵! ${name}님이 ${amount.toLocaleString()}칩을 테이블에 올렸습니다.`,
     `${name}님의 베팅 ${amount.toLocaleString()}칩! 좋은 패가 들어올까요?`,
   ],
-  PLAYER_TURN: (name: string, score: number) => [
-    `${name}님 차례입니다! 현재 ${score}점, 카드를 더 받으시겠습니까?`,
+  PLAYER_TURN: (name: string) => [
+    `${name}님 차례입니다! 카드를 더 받으시겠습니까?`,
     `지금은 ${name}님의 턴입니다. 히트할까요, 스탠드할까요?`,
-    `${name}님, 신중하게 선택하세요! 현재 점수는 ${score}점입니다.`,
+    `${name}님, 신중하게 선택하세요!`,
   ],
-  HIT: (name: string, score: number) => [
-    `${name}님 히트! 카드를 한 장 더 받아 ${score}점이 되었습니다.`,
-    `승부수를 띄우는 ${name}님! 현재 합계 ${score}점입니다.`,
-    `${name}님이 카드를 추가했습니다. 점수 ${score}점!`,
+  HIT: (name: string) => [
+    `${name}님 히트! 카드를 한 장 더 받았습니다.`,
+    `승부수를 띄우는 ${name}님!`,
+    `${name}님이 카드를 추가했습니다.`,
   ],
-  STAND: (name: string, score: number) => [
-    `${name}님이 ${score}점에서 멈추고 스탠드를 선언했습니다.`,
-    `안전을 택한 ${name}님! ${score}점으로 다음 순서를 기다립니다.`,
-    `${name}님 스탠드! 최종 점수 ${score}점입니다.`,
+  STAND: (name: string) => [
+    `${name}님이 멈추고 스탠드를 선언했습니다.`,
+    `안전을 택한 ${name}님! 다음 순서를 기다립니다.`,
+    `${name}님 스탠드입니다.`,
   ],
-  DOUBLE: (name: string, score: number) => [
-    `와우! ${name}님의 더블 다운! 판돈을 두 배로 올리고 ${score}점이 되었습니다!`,
-    `${name}님이 승부수를 던졌습니다! 더블 다운으로 ${score}점 완성!`,
+  DOUBLE: (name: string) => [
+    `와우! ${name}님의 더블 다운! 판돈을 두 배로 올렸습니다!`,
+    `${name}님이 승부수를 던졌습니다! 더블입니다!`,
   ],
   BUST: (name: string, score: number) => [
     `아이고! ${name}님 ${score}점으로 21점을 초과해 버스트되었습니다!`,
@@ -973,11 +973,10 @@ export default function Page11() {
       }
 
       const activeP = room.players[firstActiveIdx];
-      const activeScore = calculateBlackjackScore(activeP.hand).score;
       room.status = 'PLAYING';
       room.currentPlayerIdx = firstActiveIdx;
       room.turnDeadline = Date.now() + room.baseTimeout * 1000;
-      room.turnNotice = `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(activeP.name, activeScore))}`;
+      room.turnNotice = `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(activeP.name))}`;
       return room;
     });
   };
@@ -1028,15 +1027,14 @@ export default function Page11() {
           playSound('bust');
           actionNotice = `💥 ${pickRandomLine(SITUATION_LINES.BUST(actor.name, ev.score))}`;
         } else {
-          actionNotice = `🃏 ${pickRandomLine(SITUATION_LINES.HIT(actor.name, ev.score))}`;
+          actionNotice = `🃏 ${pickRandomLine(SITUATION_LINES.HIT(actor.name))}`;
         }
       } else if (action === 'STAND') {
-        const ev = calculateBlackjackScore(actor.hand);
         room.players[idx] = {
           ...actor,
           isStanding: true,
         };
-        actionNotice = `✋ ${pickRandomLine(SITUATION_LINES.STAND(actor.name, ev.score))}`;
+        actionNotice = `✋ ${pickRandomLine(SITUATION_LINES.STAND(actor.name))}`;
       } else if (action === 'DOUBLE') {
         if (actor.hand.length !== 2 || actor.chips < actor.currentBet) return room;
         const extra = actor.currentBet;
@@ -1059,7 +1057,7 @@ export default function Page11() {
           playSound('bust');
           actionNotice = `💥 ${pickRandomLine(SITUATION_LINES.BUST(actor.name, ev.score))}`;
         } else {
-          actionNotice = `🔥 ${pickRandomLine(SITUATION_LINES.DOUBLE(actor.name, ev.score))}`;
+          actionNotice = `🔥 ${pickRandomLine(SITUATION_LINES.DOUBLE(actor.name))}`;
         }
       }
 
@@ -1073,13 +1071,12 @@ export default function Page11() {
 
       if (wrapIdx !== -1) {
         const nextActor = room.players[wrapIdx];
-        const nextScore = calculateBlackjackScore(nextActor.hand).score;
         room.currentPlayerIdx = wrapIdx;
         room.turnDeadline = Date.now() + room.baseTimeout * 1000;
         room.turnNotice =
           wrapIdx === idx
             ? actionNotice
-            : `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(nextActor.name, nextScore))}`;
+            : `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(nextActor.name))}`;
         return room;
       }
 
@@ -1171,10 +1168,9 @@ export default function Page11() {
         const nextIdx = r.players.findIndex((p) => !p.isStanding && !p.isBusted);
         if (nextIdx !== -1) {
           const nextP = r.players[nextIdx];
-          const nextScore = calculateBlackjackScore(nextP.hand).score;
           r.currentPlayerIdx = nextIdx;
           r.turnDeadline = Date.now() + r.baseTimeout * 1000;
-          r.turnNotice = `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(nextP.name, nextScore))}`;
+          r.turnNotice = `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(nextP.name))}`;
           return r;
         }
 
@@ -1372,8 +1368,7 @@ export default function Page11() {
     }
 
     const firstP = dealtPlayers[firstActiveIdx];
-    const score = calculateBlackjackScore(firstP.hand).score;
-    const nextNotice = `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(firstP.name, score))}`;
+    const nextNotice = `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(firstP.name))}`;
 
     setDeck(deckCopy);
     setPlayers(dealtPlayers);
@@ -1401,11 +1396,10 @@ export default function Page11() {
 
     if (wrapIdx !== -1) {
       const targetP = nextPlayers[wrapIdx];
-      const score = calculateBlackjackScore(targetP.hand).score;
       const notice =
         wrapIdx === currentPlayerIdx && sameTurnNotice
           ? sameTurnNotice
-          : `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(targetP.name, score))}`;
+          : `🎯 ${pickRandomLine(SITUATION_LINES.PLAYER_TURN(targetP.name))}`;
 
       setPlayers(nextPlayers);
       setDeck(nextDeck);
@@ -1460,7 +1454,7 @@ export default function Page11() {
 
     const notice = busted
       ? `💥 ${pickRandomLine(SITUATION_LINES.BUST(actor.name, ev.score))}`
-      : `🃏 ${pickRandomLine(SITUATION_LINES.HIT(actor.name, ev.score))}`;
+      : `🃏 ${pickRandomLine(SITUATION_LINES.HIT(actor.name))}`;
 
     advanceSoloTurnOrSettle(updated, deckCopy, notice);
   };
@@ -1468,11 +1462,10 @@ export default function Page11() {
   const handleSoloStand = () => {
     if (gameState !== 'PLAYING') return;
     const actor = players[currentPlayerIdx];
-    const ev = calculateBlackjackScore(actor.hand);
     const updated = players.map((p, idx) =>
       idx === currentPlayerIdx ? { ...p, isStanding: true } : p
     );
-    const notice = `✋ ${pickRandomLine(SITUATION_LINES.STAND(actor.name, ev.score))}`;
+    const notice = `✋ ${pickRandomLine(SITUATION_LINES.STAND(actor.name))}`;
     advanceSoloTurnOrSettle(updated, deck, notice);
   };
 
@@ -1505,7 +1498,7 @@ export default function Page11() {
 
     const notice = busted
       ? `💥 ${pickRandomLine(SITUATION_LINES.BUST(actor.name, ev.score))}`
-      : `🔥 ${pickRandomLine(SITUATION_LINES.DOUBLE(actor.name, ev.score))}`;
+      : `🔥 ${pickRandomLine(SITUATION_LINES.DOUBLE(actor.name))}`;
 
     advanceSoloTurnOrSettle(updated, deckCopy, notice);
   };
