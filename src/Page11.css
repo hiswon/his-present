@@ -276,7 +276,6 @@
   transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
-/* 현재 차례인 플레이어의 이름을 크게 돋보이게 강조 */
 .player-badge-card.active-turn-spotlight {
   background: #fef08a;
   box-shadow: 0 4px 14px rgba(234, 179, 8, 0.45);
@@ -343,7 +342,6 @@
   overflow-y: auto;
 }
 
-/* 매 턴 새로 리셋되며 반짝이는 안내 배너 */
 .bj-notice-banner {
   background: rgba(15, 23, 42, 0.65);
   border: 1.5px solid rgba(253, 224, 71, 0.45);
@@ -365,6 +363,30 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.center-pot-box {
+  align-self: center;
+  background: rgba(15, 23, 42, 0.65);
+  border: 2px solid #fbbf24;
+  border-radius: 999px;
+  padding: 5px 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #ffffff;
+}
+
+.pot-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.pot-amount {
+  font-size: 16px;
+  font-weight: 900;
+  color: #facc15;
 }
 
 .winner-celebration-top-bar {

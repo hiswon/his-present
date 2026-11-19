@@ -50,10 +50,10 @@ interface NetBlackjackRoomData {
   roomId: number;
   status: 'EMPTY' | 'WAITING' | 'BETTING' | 'PLAYING' | 'ROUND_OVER';
   players: BlackjackPlayer[];
-  dealerHand: BlackjackCard[];
+  pot: number;
   waitlist: WaitlistPlayer[];
   spectators: SpectatorPlayer[];
-  baseTimeout: number; // 기본 120초 (2분)
+  baseTimeout: number;
   minBet: number;
   roundNumber: number;
   deck: BlackjackCard[];
@@ -88,7 +88,7 @@ const PLAYER_BG_COLORS = [
 
 const PIECE_COLORS = ['#dc2626', '#2563eb', '#059669', '#d97706'];
 const INITIAL_CHIPS = 10000;
-const DEFAULT_TIMEOUT_SEC = 120; // 기본 2분
+const DEFAULT_TIMEOUT_SEC = 120;
 
 const SITUATION_LINES = {
   BET_START: (round: number) => [
@@ -113,7 +113,7 @@ const SITUATION_LINES = {
   ],
   STAND: (name: string, score: number) => [
     `${name}님이 ${score}점에서 멈추고 스탠드를 선언했습니다.`,
-    `안전을 택한 ${name}님! ${score}점으로 딜러를 기다립니다.`,
+    `안전을 택한 ${name}님! ${score}점으로 다음 순서를 기다립니다.`,
     `${name}님 스탠드! 최종 점수 ${score}점입니다.`,
   ],
   DOUBLE: (name: string, score: number) => [
@@ -123,10 +123,6 @@ const SITUATION_LINES = {
   BUST: (name: string, score: number) => [
     `아이고! ${name}님 ${score}점으로 21점을 초과해 버스트되었습니다!`,
     `아쉽습니다! ${name}님 버스트(${score}점)로 이번 판은 아웃입니다.`,
-  ],
-  BLACKJACK: (name: string) => [
-    `대박! ${name}님 첫 두 장으로 21점, 블랙잭입니다!`,
-    `환상적입니다! ${name}님이 블랙잭을 완성했습니다!`,
   ],
 };
 
@@ -160,9 +156,6 @@ function isRedSuit(suit: Suit): boolean {
   return suit === 'HEART' || suit === 'DIAMOND';
 }
 
-/**
- * 블랙잭용 4덱 슈(208장) 생성
- */
 function createBlackjackShoe(deckCount = 4): BlackjackCard[] {
   const suits: Suit[] = ['SPADE', 'HEART', 'DIAMOND', 'CLUB'];
   const shoe: BlackjackCard[] = [];
@@ -181,19 +174,15 @@ function createBlackjackShoe(deckCount = 4): BlackjackCard[] {
   return shoe.sort(() => Math.random() - 0.5);
 }
 
-/**
- * 블랙잭 점수 계산 (A는 11 또는 1로 유리하게 자동 계산)
- */
-function calculateBlackjackScore(cards: BlackjackCard[], onlyFaceUp = false): {
+function calculateBlackjackScore(cards: BlackjackCard[]): {
   score: number;
   isSoft: boolean;
   isBlackjack: boolean;
 } {
-  const targetCards = onlyFaceUp ? cards.filter((c) => c.isFaceUp) : cards;
   let total = 0;
   let aceCount = 0;
 
-  for (const c of targetCards) {
+  for (const c of cards) {
     if (c.rank === 14) {
       total += 11;
       aceCount += 1;
@@ -209,7 +198,7 @@ function calculateBlackjackScore(cards: BlackjackCard[], onlyFaceUp = false): {
     aceCount -= 1;
   }
 
-  const isBlackjack = !onlyFaceUp && targetCards.length === 2 && total === 21;
+  const isBlackjack = cards.length === 2 && total === 21;
   return {
     score: total,
     isSoft: aceCount > 0,
@@ -218,9 +207,9 @@ function calculateBlackjackScore(cards: BlackjackCard[], onlyFaceUp = false): {
 }
 
 /**
- * 딜러 턴 진행 (17점 이상이 될 때까지 히트) 및 전원 승패 정산
+ * [단독게임 전용] 딜러와 플레이어 간 대결 정산
  */
-function settleDealerAndPlayers(
+function settleSoloWithDealer(
   players: BlackjackPlayer[],
   dealerHand: BlackjackCard[],
   deck: BlackjackCard[]
@@ -270,7 +259,7 @@ function settleDealerAndPlayers(
       winners.push(p.name);
     } else if (pEval.score === dealerEval.score) {
       result = 'PUSH';
-      payout = p.currentBet; // 무승부 원금 반환
+      payout = p.currentBet;
     } else {
       result = 'LOSE';
       payout = 0;
@@ -293,7 +282,7 @@ function settleDealerAndPlayers(
   } else if (settledPlayers.some((p) => p.roundResult === 'PUSH')) {
     announcement = `🤝 무승부(푸시)입니다! 베팅한 칩을 돌려받았습니다. (딜러 ${dealerEval.score}점)`;
   } else {
-    announcement = `🎩 딜러(${dealerEval.score}점)의 승리입니다! 다음 판에 설욕하세요!`;
+    announcement = `🎩 딜러(${dealerEval.score}점)의 승리입니다! 다음 판에 도전하세요!`;
   }
 
   return {
@@ -305,12 +294,83 @@ function settleDealerAndPlayers(
   };
 }
 
+/**
+ * [넷게임 전용] 딜러 없이 플레이어 간 직접 승부 정산
+ */
+function settleNetPlayersOnly(
+  players: BlackjackPlayer[],
+  totalPot: number
+): {
+  settledPlayers: BlackjackPlayer[];
+  winners: string[];
+  announcement: string;
+} {
+  const validPlayers = players.filter((p) => {
+    const score = calculateBlackjackScore(p.hand).score;
+    return !p.isBusted && score <= 21;
+  });
+
+  if (validPlayers.length === 0) {
+    // 전원 버스트 시 판돈은 다음 라운드 또는 균등 분배 대신 이월 처리
+    const settledPlayers = players.map((p) => ({
+      ...p,
+      hand: p.hand.map((c) => ({ ...c, isFaceUp: true })),
+      roundResult: 'BUST' as PlayerRoundResult,
+    }));
+    return {
+      settledPlayers,
+      winners: [],
+      announcement: `💥 참가자 전원 21점을 초과(버스트)했습니다! 판돈 ${totalPot.toLocaleString()}칩이 다음 판으로 이월됩니다.`,
+    };
+  }
+
+  let highestScore = -1;
+  for (const vp of validPlayers) {
+    const sc = calculateBlackjackScore(vp.hand).score;
+    if (sc > highestScore) {
+      highestScore = sc;
+    }
+  }
+
+  const topPlayers = validPlayers.filter(
+    (vp) => calculateBlackjackScore(vp.hand).score === highestScore
+  );
+  const winners = topPlayers.map((tp) => tp.name);
+  const prizePerWinner = Math.floor(totalPot / topPlayers.length);
+
+  const settledPlayers = players.map((p) => {
+    const sc = calculateBlackjackScore(p.hand).score;
+    const isTop = !p.isBusted && sc === highestScore;
+    if (isTop) {
+      return {
+        ...p,
+        hand: p.hand.map((c) => ({ ...c, isFaceUp: true })),
+        chips: p.chips + prizePerWinner,
+        wins: (p.wins || 0) + 1,
+        roundResult: (p.isBlackjack ? 'BLACKJACK_WIN' : 'WIN') as PlayerRoundResult,
+      };
+    }
+    return {
+      ...p,
+      hand: p.hand.map((c) => ({ ...c, isFaceUp: true })),
+      roundResult: (p.isBusted || sc > 21 ? 'BUST' : 'LOSE') as PlayerRoundResult,
+    };
+  });
+
+  const announcement = `🎊 ${winners.join(', ')}님이 이겼습니다! 축하합니다! (${highestScore}점 · +${prizePerWinner.toLocaleString()}칩)`;
+  return {
+    settledPlayers,
+    winners,
+    announcement,
+  };
+}
+
 function createDefaultBlackjackRoom(roomId: number): NetBlackjackRoomData {
   return {
     roomId,
     status: 'EMPTY',
     players: [],
-    dealerHand: [],
+    pot: 0,
     waitlist: [],
     spectators: [],
     baseTimeout: DEFAULT_TIMEOUT_SEC,
@@ -413,7 +473,6 @@ export default function Page11() {
 
   const speakKorean = (text: string, interrupt = true) => {
     if (!text || !('speechSynthesis' in window)) return;
-    // 이모지 제거 후 자연스럽게 읽기
     const cleanText = text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
     if (!cleanText) return;
     if (interrupt) {
@@ -465,9 +524,6 @@ export default function Page11() {
     }
   };
 
-  /**
-   * 칩 투척 애니메이션 트리거
-   */
   const triggerChipAnimation = (playerName: string, amount: number, color: string) => {
     playSound('chip');
     const id = Date.now() + Math.random();
@@ -477,9 +533,6 @@ export default function Page11() {
     }, 1050);
   };
 
-  /**
-   * 폭죽 축하 이펙트 트리거
-   */
   const triggerFireworksCelebration = (announcementText: string) => {
     playSound('win');
     speakKorean(announcementText);
@@ -489,9 +542,6 @@ export default function Page11() {
     }, 4500);
   };
 
-  /**
-   * 10초 남았을 때 & 5, 4, 3, 2, 1 카운트다운 음성 + 비프음 처리
-   */
   const handleCountdownCue = (secLeft: number) => {
     if (lastCountdownSpokenRef.current === secLeft) return;
     lastCountdownSpokenRef.current = secLeft;
@@ -566,7 +616,7 @@ export default function Page11() {
             chips: typeof p.chips === 'number' ? p.chips : INITIAL_CHIPS,
             wins: typeof p.wins === 'number' ? p.wins : 0,
           })),
-          dealerHand: rData.dealerHand || [],
+          pot: typeof rData.pot === 'number' ? rData.pot : 0,
           waitlist: rData.waitlist || [],
           spectators: rData.spectators || [],
           deck: rData.deck || [],
@@ -584,7 +634,6 @@ export default function Page11() {
       ? rooms.find((r) => r.roomId === selectedRoomId) || null
       : null;
 
-  // 넷게임 턴 안내문 변경 시 음성 자동 읽기 & 라운드 종료 시 폭죽 실행
   useEffect(() => {
     if (appMode !== 'NET_ROOM' || !activeNetRoom) return;
 
@@ -611,7 +660,6 @@ export default function Page11() {
     }
   }, [appMode, activeNetRoom?.turnNotice, activeNetRoom?.status, activeNetRoom?.winnerAnnouncement]);
 
-  // 넷게임 타이머 및 10초/5~1초 카운트다운
   useEffect(() => {
     if (appMode !== 'NET_ROOM' || !activeNetRoom) {
       setRemainingSeconds(DEFAULT_TIMEOUT_SEC);
@@ -655,7 +703,6 @@ export default function Page11() {
     return () => window.clearInterval(timer);
   }, [appMode, activeNetRoom]);
 
-  // 단독게임 타이머 및 10초/5~1초 카운트다운
   useEffect(() => {
     if (appMode !== 'SOLO' || (gameState !== 'BETTING' && gameState !== 'PLAYING')) {
       return;
@@ -749,7 +796,7 @@ export default function Page11() {
       setAppMode('NET_ROOM');
 
       if (joinResultType === 'SPECTATOR') {
-        showToast('👀 관망모드로 입장했습니다!', 'info');
+        showToast('👀 관망모드로 입장했습니다! 패는 비공개로 보호됩니다.', 'info');
       } else if (joinResultType === 'WAITLIST') {
         showToast('⏳ 다음 판 예약자로 등록되었습니다!', 'info');
       }
@@ -771,7 +818,7 @@ export default function Page11() {
   };
 
   /**
-   * 넷게임 라운드 시작 -> 베팅 단계(BETTING) 진입
+   * 넷게임 라운드 시작 (딜러 없이 참가자끼리만 대결)
    */
   const handleStartNetBettingPhase = async (isNextRound = false) => {
     if (!activeNetRoom) return;
@@ -811,10 +858,16 @@ export default function Page11() {
         remainingWaitlist = waitlist;
       }
 
-      if (nextParticipants.length < 1) {
-        room.status = 'EMPTY';
+      if (nextParticipants.length < 2) {
+        room.status = nextParticipants.length === 0 ? 'EMPTY' : 'WAITING';
+        room.players = nextParticipants;
+        room.waitlist = remainingWaitlist;
         return room;
       }
+
+      // 이전 판 전원 버스트로 이월된 판돈이 있으면 보존, 정상 종료 시 0으로 시작
+      const carryOverPot =
+        room.status === 'ROUND_OVER' && room.winnersList.length === 0 ? room.pot || 0 : 0;
 
       const resetPlayers = nextParticipants.map((p, idx) => ({
         ...p,
@@ -835,14 +888,16 @@ export default function Page11() {
       room.status = 'BETTING';
       room.roundNumber = nextRound;
       room.players = resetPlayers;
-      room.dealerHand = [];
+      room.pot = carryOverPot;
       room.waitlist = remainingWaitlist;
       room.deck = freshShoe;
       room.currentPlayerIdx = 0;
       room.turnDeadline = Date.now() + room.baseTimeout * 1000;
       room.winnerAnnouncement = '';
       room.winnersList = [];
-      room.turnNotice = `💰 [${nextRound}라운드] ${pickRandomLine(SITUATION_LINES.BET_START(nextRound))}`;
+      room.turnNotice = `💰 [${nextRound}라운드 · 참가자 대전] ${pickRandomLine(
+        SITUATION_LINES.BET_START(nextRound)
+      )}`;
       room.waitingSince = null;
 
       return room;
@@ -852,7 +907,7 @@ export default function Page11() {
   };
 
   /**
-   * 넷게임 플레이어 베팅 확정 -> 전원 베팅 완료 시 초기 2장씩 배분
+   * 넷게임 베팅 확정 -> 전원 베팅 시 참가자들에게만 2장씩 배분 (딜러 없음)
    */
   const handleNetPlaceBet = async (betAmount: number) => {
     if (!activeNetRoom || activeNetRoom.status !== 'BETTING') return;
@@ -880,6 +935,7 @@ export default function Page11() {
         currentBet: pay,
         hasPlacedBet: true,
       };
+      room.pot = (room.pot || 0) + pay;
 
       const allBetDone = room.players.every((p) => p.hasPlacedBet);
       if (!allBetDone) {
@@ -887,7 +943,6 @@ export default function Page11() {
         return room;
       }
 
-      // 전원 베팅 완료 -> 카드 2장씩 배분 (딜러는 1장 오픈, 1장 히든)
       const deckCopy = [...(room.deck || createBlackjackShoe(4))];
       room.players = room.players.map((p) => {
         const c1 = { ...deckCopy.shift()!, isFaceUp: true };
@@ -902,18 +957,13 @@ export default function Page11() {
         };
       });
 
-      const d1 = { ...deckCopy.shift()!, isFaceUp: true };
-      const d2 = { ...deckCopy.shift()!, isFaceUp: false };
-      room.dealerHand = [d1, d2];
       room.deck = deckCopy;
 
       const firstActiveIdx = room.players.findIndex((p) => !p.isStanding && !p.isBusted);
       if (firstActiveIdx === -1) {
-        // 전원 블랙잭인 경우 즉시 정산
-        const settled = settleDealerAndPlayers(room.players, room.dealerHand, deckCopy);
+        const settled = settleNetPlayersOnly(room.players, room.pot);
         room.players = settled.settledPlayers;
-        room.dealerHand = settled.finalDealerHand;
-        room.deck = settled.remainingDeck;
+        room.pot = 0;
         room.status = 'ROUND_OVER';
         room.turnDeadline = null;
         room.turnNotice = '';
@@ -1003,6 +1053,7 @@ export default function Page11() {
           isBusted: busted,
           isStanding: true,
         };
+        room.pot = (room.pot || 0) + extra;
 
         if (busted) {
           playSound('bust');
@@ -1014,7 +1065,6 @@ export default function Page11() {
 
       room.deck = deckCopy;
 
-      // 다음 아직 행동이 끝나지 않은 플레이어 탐색
       const nextIdx = room.players.findIndex((p, i) => i > idx && !p.isStanding && !p.isBusted);
       const wrapIdx =
         nextIdx !== -1
@@ -1026,7 +1076,6 @@ export default function Page11() {
         const nextScore = calculateBlackjackScore(nextActor.hand).score;
         room.currentPlayerIdx = wrapIdx;
         room.turnDeadline = Date.now() + room.baseTimeout * 1000;
-        // 다음 턴이 되면 상단 텍스트를 새 턴 안내로 리셋
         room.turnNotice =
           wrapIdx === idx
             ? actionNotice
@@ -1034,11 +1083,10 @@ export default function Page11() {
         return room;
       }
 
-      // 전원 플레이 종료 -> 딜러 오픈 및 승패 정산
-      const settled = settleDealerAndPlayers(room.players, room.dealerHand, deckCopy);
+      // 참가자 전원 플레이 종료 -> 일제 공개 및 승패 정산
+      const settled = settleNetPlayersOnly(room.players, room.pot || 0);
       room.players = settled.settledPlayers;
-      room.dealerHand = settled.finalDealerHand;
-      room.deck = settled.remainingDeck;
+      room.pot = settled.winners.length > 0 ? 0 : room.pot;
       room.status = 'ROUND_OVER';
       room.turnDeadline = null;
       room.turnNotice = '';
@@ -1067,11 +1115,14 @@ export default function Page11() {
         const r = roomData as NetBlackjackRoomData;
         if (r.status !== 'BETTING') return r;
 
+        let addedPot = 0;
         r.players = r.players.map((p) => {
           if (p.hasPlacedBet) return p;
           const autoPay = Math.min(p.chips, r.minBet);
+          addedPot += autoPay;
           return { ...p, chips: p.chips - autoPay, currentBet: autoPay, hasPlacedBet: true };
         });
+        r.pot = (r.pot || 0) + addedPot;
 
         const deckCopy = [...(r.deck || createBlackjackShoe(4))];
         r.players = r.players.map((p) => {
@@ -1083,18 +1134,13 @@ export default function Page11() {
           return { ...p, hand, isBlackjack: ev.isBlackjack, isStanding: ev.isBlackjack };
         });
 
-        r.dealerHand = [
-          { ...deckCopy.shift()!, isFaceUp: true },
-          { ...deckCopy.shift()!, isFaceUp: false },
-        ];
         r.deck = deckCopy;
 
         const firstIdx = r.players.findIndex((p) => !p.isStanding && !p.isBusted);
         if (firstIdx === -1) {
-          const settled = settleDealerAndPlayers(r.players, r.dealerHand, deckCopy);
+          const settled = settleNetPlayersOnly(r.players, r.pot || 0);
           r.players = settled.settledPlayers;
-          r.dealerHand = settled.finalDealerHand;
-          r.deck = settled.remainingDeck;
+          r.pot = 0;
           r.status = 'ROUND_OVER';
           r.turnDeadline = null;
           r.turnNotice = '';
@@ -1132,10 +1178,9 @@ export default function Page11() {
           return r;
         }
 
-        const settled = settleDealerAndPlayers(r.players, r.dealerHand, r.deck || []);
+        const settled = settleNetPlayersOnly(r.players, r.pot || 0);
         r.players = settled.settledPlayers;
-        r.dealerHand = settled.finalDealerHand;
-        r.deck = settled.remainingDeck;
+        r.pot = settled.winners.length > 0 ? 0 : r.pot;
         r.status = 'ROUND_OVER';
         r.turnDeadline = null;
         r.turnNotice = '';
@@ -1174,7 +1219,7 @@ export default function Page11() {
   };
 
   // =========================================================================
-  // 단독게임(SOLO) 로직
+  // 단독게임(SOLO) 로직 (딜러와 함께 대결)
   // =========================================================================
   const addPlayer = () => {
     const trimmed = inputName ? inputName.trim() : '';
@@ -1244,7 +1289,7 @@ export default function Page11() {
       roundResult: 'NONE' as PlayerRoundResult,
     }));
 
-    const notice = `💰 [${nextRound}라운드] ${initialized[0].name}님, 베팅할 칩을 선택해 주세요!`;
+    const notice = `💰 [${nextRound}라운드 · 딜러 대결] ${initialized[0].name}님, 베팅할 칩을 선택해 주세요!`;
     setSoloRoundNum(nextRound);
     setDeck(freshShoe);
     setPlayers(initialized);
@@ -1286,7 +1331,6 @@ export default function Page11() {
       return;
     }
 
-    // 전원 베팅 완료 -> 카드 2장씩 배분
     const deckCopy = [...deck];
     const dealtPlayers = updated.map((p) => {
       const hand = [
@@ -1302,8 +1346,9 @@ export default function Page11() {
       };
     });
 
+    // 딜러 카드 2장 (게임 중에는 모두 뒷면 숨김 처리, 종료 시 일제 공개)
     const newDealerHand = [
-      { ...deckCopy.shift()!, isFaceUp: true },
+      { ...deckCopy.shift()!, isFaceUp: false },
       { ...deckCopy.shift()!, isFaceUp: false },
     ];
 
@@ -1311,7 +1356,7 @@ export default function Page11() {
     const firstActiveIdx = dealtPlayers.findIndex((p) => !p.isStanding && !p.isBusted);
 
     if (firstActiveIdx === -1) {
-      const settled = settleDealerAndPlayers(dealtPlayers, newDealerHand, deckCopy);
+      const settled = settleSoloWithDealer(dealtPlayers, newDealerHand, deckCopy);
       setPlayers(settled.settledPlayers);
       setDealerHand(settled.finalDealerHand);
       setDeck(settled.remainingDeck);
@@ -1357,7 +1402,6 @@ export default function Page11() {
     if (wrapIdx !== -1) {
       const targetP = nextPlayers[wrapIdx];
       const score = calculateBlackjackScore(targetP.hand).score;
-      // 다음 턴이 되면 기존 안내 문구를 새 턴 안내로 리셋
       const notice =
         wrapIdx === currentPlayerIdx && sameTurnNotice
           ? sameTurnNotice
@@ -1373,8 +1417,7 @@ export default function Page11() {
       return;
     }
 
-    // 딜러 오픈 및 최종 승패 정산
-    const settled = settleDealerAndPlayers(nextPlayers, dealerHand, nextDeck);
+    const settled = settleSoloWithDealer(nextPlayers, dealerHand, nextDeck);
     setPlayers(settled.settledPlayers);
     setDealerHand(settled.finalDealerHand);
     setDeck(settled.remainingDeck);
@@ -1468,18 +1511,19 @@ export default function Page11() {
   };
 
   // =========================================================================
-  // 공용 UI 렌더링 헬퍼 (카드, 폭죽, 칩 애니메이션, 결과 배지)
+  // 공용 UI 렌더링 헬퍼 (revealFace가 false면 무조건 카드 뒷면 표시)
   // =========================================================================
-  const renderCard = (card: BlackjackCard, mini = false) => {
+  const renderCard = (card: BlackjackCard, revealFace: boolean, mini = false) => {
+    const showFront = revealFace && card.isFaceUp;
     const red = isRedSuit(card.suit);
     return (
       <div
         key={card.id}
-        className={`bj-card ${card.isFaceUp ? 'face-up' : 'face-down'} ${
+        className={`bj-card ${showFront ? 'face-up' : 'face-down'} ${
           red ? 'red' : 'black'
         } ${mini ? 'mini' : ''}`}
       >
-        {card.isFaceUp ? (
+        {showFront ? (
           <>
             <span className="bj-card-rank">{getRankLabel(card.rank)}</span>
             <span className="bj-card-suit">{getSuitSymbol(card.suit)}</span>
@@ -1494,11 +1538,11 @@ export default function Page11() {
   const renderResultBadge = (result: PlayerRoundResult) => {
     switch (result) {
       case 'BLACKJACK_WIN':
-        return <span className="bj-res-badge bj">👑 블랙잭 승리! (2.5배)</span>;
+        return <span className="bj-res-badge bj">👑 블랙잭 승리!</span>;
       case 'WIN':
-        return <span className="bj-res-badge win">🎉 승리! (2배)</span>;
+        return <span className="bj-res-badge win">🎉 승리!</span>;
       case 'PUSH':
-        return <span className="bj-res-badge push">🤝 무승부 (원금 반환)</span>;
+        return <span className="bj-res-badge push">🤝 무승부</span>;
       case 'BUST':
         return <span className="bj-res-badge lose">💥 버스트 (21 초과)</span>;
       case 'LOSE':
@@ -1510,7 +1554,6 @@ export default function Page11() {
 
   const renderFireworksAndChips = () => (
     <>
-      {/* 칩 던지기 애니메이션 레이어 */}
       <div className="chip-fly-layer">
         {chipFlyEffects.map((chip) => (
           <div
@@ -1526,7 +1569,6 @@ export default function Page11() {
         ))}
       </div>
 
-      {/* 승리 축하 폭죽 레이어 */}
       {showFireworks && (
         <div className="fireworks-overlay" aria-hidden="true">
           <div className="firework-burst fb-1" />
@@ -1548,7 +1590,7 @@ export default function Page11() {
         <div className="setup-card home-entry-card">
           <div className="home-castle-icon">🃏🎰♠️♥️</div>
           <h1 className="setup-title">블랙잭 21 (BLACKJACK)</h1>
-          <p className="home-subtitle">딜러보다 21에 가깝게! 음성 안내 · 칩 베팅 · 실시간 대전</p>
+          <p className="home-subtitle">단독은 딜러와 대결 · 넷게임은 플레이어 간 대결</p>
 
           <div className="mode-select-grid">
             <button
@@ -1561,7 +1603,7 @@ export default function Page11() {
             >
               <span className="mode-icon">🎮</span>
               <strong>단독게임</strong>
-              <span className="mode-desc">한 화면에서 1~4명 함께 즐기는 블랙잭</span>
+              <span className="mode-desc">딜러와 함께 즐기는 1~4인 블랙잭</span>
             </button>
 
             <button
@@ -1571,7 +1613,7 @@ export default function Page11() {
             >
               <span className="mode-icon">🌐</span>
               <strong>넷게임</strong>
-              <span className="mode-desc">온라인 4개 테이블 실시간 대전 · 승수/칩 누적</span>
+              <span className="mode-desc">딜러 없이 참가자끼리 실시간 판돈 대전</span>
             </button>
           </div>
 
@@ -1816,7 +1858,7 @@ export default function Page11() {
   }
 
   // =========================================================================
-  // 4. 넷게임 방 내부 (대기실 & 플레이 화면)
+  // 4. 넷게임 방 내부 (딜러 없이 플레이어 간 대결, 관망모드 패 비공개)
   // =========================================================================
   if (appMode === 'NET_ROOM') {
     if (!activeNetRoom) {
@@ -1839,7 +1881,6 @@ export default function Page11() {
     const amIWaitlisted = roomWaitlist.some((w) => w.id === mySessionId);
     const amISpectator = roomSpectators.some((s) => s.id === mySessionId);
 
-    // 4-A. 넷게임 대기실
     if (activeNetRoom.status === 'WAITING' || activeNetRoom.status === 'EMPTY') {
       const minutes = Math.floor(waitingCountdownSec / 60);
       const seconds = waitingCountdownSec % 60;
@@ -1863,7 +1904,7 @@ export default function Page11() {
             </div>
 
             <h1 className="setup-title" style={{ marginTop: '14px' }}>
-              🎰 블랙잭 21 대기실 {amISpectator ? '👀 [관망모드]' : ''}
+              🎰 블랙잭 21 대기실 (참가자 대전) {amISpectator ? '👀 [관망모드]' : ''}
             </h1>
 
             <div className="setting-section">
@@ -1909,7 +1950,7 @@ export default function Page11() {
             </div>
 
             <div className="setting-section">
-              <label className="setting-label">🧭 입장한 플레이어 (초기 지급 {INITIAL_CHIPS.toLocaleString()}칩)</label>
+              <label className="setting-label">🧭 입장한 플레이어 (2명 이상 시 시작 가능)</label>
               <div className="player-list">
                 {roomPlayers.map((p, idx) => (
                   <div key={p.id} className="player-item">
@@ -1930,26 +1971,22 @@ export default function Page11() {
             <button
               type="button"
               className="btn btn-success"
-              disabled={roomPlayers.length < 1}
+              disabled={roomPlayers.length < 2}
               onClick={() => handleStartNetBettingPhase(false)}
             >
-              🚀 블랙잭 게임 시작! ({roomPlayers.length}/4명)
+              🚀 블랙잭 대전 시작! ({roomPlayers.length}/4명)
             </button>
           </div>
         </div>
       );
     }
 
-    // 4-B. 넷게임 플레이 화면
     const netCurrIdx = (activeNetRoom.currentPlayerIdx || 0) % Math.max(1, roomPlayers.length);
     const netCurrPlayer = roomPlayers[netCurrIdx];
     const isMyTurn =
       activeNetRoom.status === 'PLAYING' && netCurrPlayer?.id === mySessionId && !amISpectator;
     const myPlayerObj = roomPlayers.find((p) => p.id === mySessionId);
-    const dealerEval = calculateBlackjackScore(
-      activeNetRoom.dealerHand,
-      activeNetRoom.status !== 'ROUND_OVER'
-    );
+    const isRoundOver = activeNetRoom.status === 'ROUND_OVER';
 
     return (
       <div
@@ -1965,13 +2002,12 @@ export default function Page11() {
         )}
 
         <div className="play-wrapper compact-tablet-mode">
-          {/* 상단 상태바 (현재 차례 플레이어 이름 크게 강조) */}
           <div className="game-header compact-header">
             <div className="net-level-timer-box">
               <span className="net-level-badge">
                 {activeNetRoom.roundNumber}판째 {amISpectator ? '👀[관망]' : ''}
               </span>
-              {activeNetRoom.status !== 'ROUND_OVER' && (
+              {!isRoundOver && (
                 <span className={`net-timer-badge ${remainingSeconds <= 10 ? 'urgent' : ''}`}>
                   ⏱️ {remainingSeconds}초
                 </span>
@@ -2026,10 +2062,8 @@ export default function Page11() {
             </div>
           )}
 
-          {/* 중앙 블랙잭 테이블 */}
           <div className="bj-table-board">
-            {/* 라운드 종료 시 축하 배너 vs 진행 중 턴 리셋 안내 배너 */}
-            {activeNetRoom.status === 'ROUND_OVER' ? (
+            {isRoundOver ? (
               <div className="winner-celebration-top-bar">
                 <div className="winner-celebrate-title">
                   {activeNetRoom.winnerAnnouncement}
@@ -2059,33 +2093,20 @@ export default function Page11() {
               </div>
             )}
 
-            {/* 딜러 영역 */}
-            <div className="dealer-zone">
-              <div className="dealer-header">
-                <span className="dealer-badge">🎩 딜러 (DEALER)</span>
-                {activeNetRoom.dealerHand.length > 0 && (
-                  <span className="dealer-score-pill">
-                    {activeNetRoom.status === 'ROUND_OVER'
-                      ? `최종 ${dealerEval.score}점 ${dealerEval.score > 21 ? '(버스트!)' : ''}`
-                      : `오픈 점수: ${dealerEval.score}점`}
-                  </span>
-                )}
-              </div>
-              <div className="cards-row dealer-cards">
-                {activeNetRoom.dealerHand.length === 0 ? (
-                  <span className="dealer-waiting-msg">플레이어 베팅 완료 시 카드가 배분됩니다</span>
-                ) : (
-                  activeNetRoom.dealerHand.map((card) => renderCard(card, false))
-                )}
-              </div>
+            {/* 넷게임 총 판돈(POT) 표시 */}
+            <div className="center-pot-box">
+              <span className="pot-label">💰 현재 총 판돈 (POT)</span>
+              <strong className="pot-amount">{(activeNetRoom.pot || 0).toLocaleString()} 칩</strong>
             </div>
 
-            {/* 전체 플레이어 핸드 및 베팅 현황 */}
+            {/* 참가자 좌석 그리드 (관망모드 및 타인 패는 라운드 종료 전까지 뒷면 숨김) */}
             <div className="players-seats-grid">
               {roomPlayers.map((p, idx) => {
                 const isTurn =
                   (activeNetRoom.status === 'PLAYING' && idx === netCurrIdx) ||
                   (activeNetRoom.status === 'BETTING' && !p.hasPlacedBet);
+                const canSeeFace =
+                  !amISpectator && (p.id === mySessionId || isRoundOver);
                 const pEval = calculateBlackjackScore(p.hand);
 
                 return (
@@ -2109,7 +2130,7 @@ export default function Page11() {
                       <span className="seat-bet-chip">
                         🪙 베팅: {p.currentBet.toLocaleString()}
                       </span>
-                      {p.hand.length > 0 && (
+                      {p.hand.length > 0 && canSeeFace && (
                         <span className="seat-score-tag">
                           {pEval.score}점 {p.isBlackjack ? '👑BJ' : ''}
                         </span>
@@ -2126,7 +2147,7 @@ export default function Page11() {
                           {p.hasPlacedBet ? '✅ 베팅 완료!' : '⏳ 베팅 대기 중...'}
                         </span>
                       ) : (
-                        p.hand.map((card) => renderCard(card, true))
+                        p.hand.map((card) => renderCard(card, canSeeFace))
                       )}
                     </div>
                   </div>
@@ -2135,7 +2156,14 @@ export default function Page11() {
             </div>
           </div>
 
-          {/* 하단 내 조작 도크 */}
+          {amISpectator && (
+            <div className="bj-bottom-dock">
+              <div className="waiting-dock-msg">
+                👀 관망모드에서는 모든 플레이어의 패가 숨겨지며, 라운드 종료 시 일제 공개됩니다.
+              </div>
+            </div>
+          )}
+
           {myPlayerObj && !amISpectator && (
             <div
               className="bj-bottom-dock"
@@ -2175,7 +2203,7 @@ export default function Page11() {
 
               {activeNetRoom.status === 'BETTING' && myPlayerObj.hasPlacedBet && (
                 <div className="waiting-dock-msg">
-                  ✅ {myPlayerObj.currentBet.toLocaleString()}칩 베팅 완료! 다른 플레이어의 베팅을 기다리고 있습니다...
+                  ✅ {myPlayerObj.currentBet.toLocaleString()}칩 베팅 완료! 다른 참가자의 베팅을 기다리고 있습니다...
                 </div>
               )}
 
@@ -2217,7 +2245,7 @@ export default function Page11() {
                 </>
               )}
 
-              {activeNetRoom.status === 'ROUND_OVER' && (
+              {isRoundOver && (
                 <div className="waiting-dock-msg">
                   🏆 라운드 종료! 상단의 <strong>[다음 게임 시작]</strong> 버튼을 눌러 승부를 이어가세요!
                 </div>
@@ -2230,14 +2258,15 @@ export default function Page11() {
   }
 
   // =========================================================================
-  // 5. 단독게임(SOLO) SETUP / READY / BETTING / PLAYING / ROUND_OVER
+  // 5. 단독게임(SOLO) - 딜러와 함께 대결, 상대 패 & 딜러 패 뒷면 숨김 -> 종료 시 일제 공개
   // =========================================================================
   const currentPlayer = players[currentPlayerIdx] || players[0];
   const currentBackground =
     (gameState === 'BETTING' || gameState === 'PLAYING') && players.length > 0
       ? PLAYER_BG_COLORS[currentPlayerIdx % PLAYER_BG_COLORS.length]
       : PLAYER_BG_COLORS[0];
-  const soloDealerEval = calculateBlackjackScore(dealerHand, gameState !== 'ROUND_OVER');
+  const isSoloRoundOver = gameState === 'ROUND_OVER';
+  const soloDealerEval = calculateBlackjackScore(dealerHand);
 
   return (
     <div className="bj-container" style={{ background: currentBackground }}>
@@ -2249,7 +2278,6 @@ export default function Page11() {
         </div>
       )}
 
-      {/* SETUP 화면 */}
       {gameState === 'SETUP' && (
         <div className="setup-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -2270,7 +2298,7 @@ export default function Page11() {
               🏅 명예의 전당
             </button>
           </div>
-          <h1 className="setup-title">🎰 블랙잭 21 (단독게임)</h1>
+          <h1 className="setup-title">🎰 블랙잭 21 (단독게임 · 딜러 대결)</h1>
 
           <div className="setting-section">
             <label className="setting-label">💰 최소 베팅 칩 설정 (초기 지급 10,000칩)</label>
@@ -2358,7 +2386,6 @@ export default function Page11() {
         </div>
       )}
 
-      {/* READY 화면 */}
       {gameState === 'READY' && (
         <div className="order-panel">
           <div className="order-header">
@@ -2423,15 +2450,13 @@ export default function Page11() {
         </div>
       )}
 
-      {/* BETTING / PLAYING / ROUND_OVER 화면 */}
       {(gameState === 'BETTING' || gameState === 'PLAYING' || gameState === 'ROUND_OVER') &&
         currentPlayer && (
           <div className="play-wrapper compact-tablet-mode">
-            {/* 상단 상태바 (누구 차례인지 이름이 크게 강조됨) */}
             <div className="game-header compact-header">
               <div className="net-level-timer-box">
                 <span className="net-level-badge">{soloRoundNum}판째</span>
-                {gameState !== 'ROUND_OVER' && (
+                {!isSoloRoundOver && (
                   <span className={`net-timer-badge ${soloRemainingSec <= 10 ? 'urgent' : ''}`}>
                     ⏱️ {soloRemainingSec}초
                   </span>
@@ -2440,7 +2465,7 @@ export default function Page11() {
 
               <div className="player-status-bar">
                 {players.map((p, idx) => {
-                  const isActive = gameState !== 'ROUND_OVER' && idx === currentPlayerIdx;
+                  const isActive = !isSoloRoundOver && idx === currentPlayerIdx;
                   return (
                     <div
                       key={p.id}
@@ -2475,9 +2500,8 @@ export default function Page11() {
               </button>
             </div>
 
-            {/* 중앙 블랙잭 테이블 */}
             <div className="bj-table-board">
-              {gameState === 'ROUND_OVER' ? (
+              {isSoloRoundOver ? (
                 <div className="winner-celebration-top-bar">
                   <div className="winner-celebrate-title">{winnerAnnouncement}</div>
                   <div className="winner-celebrate-actions">
@@ -2505,17 +2529,14 @@ export default function Page11() {
                 </div>
               )}
 
-              {/* 딜러 영역 */}
+              {/* 딜러 영역 (라운드 종료 전까지 뒷면 숨김, 종료 시 일제 공개) */}
               <div className="dealer-zone">
                 <div className="dealer-header">
                   <span className="dealer-badge">🎩 딜러 (DEALER)</span>
-                  {dealerHand.length > 0 && (
+                  {dealerHand.length > 0 && isSoloRoundOver && (
                     <span className="dealer-score-pill">
-                      {gameState === 'ROUND_OVER'
-                        ? `최종 ${soloDealerEval.score}점 ${
-                            soloDealerEval.score > 21 ? '(버스트!)' : ''
-                          }`
-                        : `오픈 점수: ${soloDealerEval.score}점`}
+                      최종 {soloDealerEval.score}점{' '}
+                      {soloDealerEval.score > 21 ? '(버스트!)' : ''}
                     </span>
                   )}
                 </div>
@@ -2523,15 +2544,16 @@ export default function Page11() {
                   {dealerHand.length === 0 ? (
                     <span className="dealer-waiting-msg">전원 베팅 완료 시 카드가 배분됩니다</span>
                   ) : (
-                    dealerHand.map((card) => renderCard(card, false))
+                    dealerHand.map((card) => renderCard(card, isSoloRoundOver))
                   )}
                 </div>
               </div>
 
-              {/* 플레이어 좌석 영역 */}
+              {/* 플레이어 좌석 영역: 현재 차례 플레이어 패만 보이고, 상대 패는 라운드 종료 시 일제 공개 */}
               <div className="players-seats-grid">
                 {players.map((p, idx) => {
-                  const isTurn = gameState !== 'ROUND_OVER' && idx === currentPlayerIdx;
+                  const isTurn = !isSoloRoundOver && idx === currentPlayerIdx;
+                  const canSeeFace = isSoloRoundOver || idx === currentPlayerIdx;
                   const pEval = calculateBlackjackScore(p.hand);
 
                   return (
@@ -2554,7 +2576,7 @@ export default function Page11() {
                         <span className="seat-bet-chip">
                           🪙 베팅: {p.currentBet.toLocaleString()}
                         </span>
-                        {p.hand.length > 0 && (
+                        {p.hand.length > 0 && canSeeFace && (
                           <span className="seat-score-tag">
                             {pEval.score}점 {p.isBlackjack ? '👑BJ' : ''}
                           </span>
@@ -2571,7 +2593,7 @@ export default function Page11() {
                             {p.hasPlacedBet ? '✅ 베팅 완료!' : '⏳ 베팅 대기 중...'}
                           </span>
                         ) : (
-                          p.hand.map((card) => renderCard(card, true))
+                          p.hand.map((card) => renderCard(card, canSeeFace))
                         )}
                       </div>
                     </div>
@@ -2580,7 +2602,6 @@ export default function Page11() {
               </div>
             </div>
 
-            {/* 하단 현재 플레이어 컨트롤 도크 */}
             <div
               className="bj-bottom-dock"
               style={{ borderTop: `4px solid ${currentPlayer.color}` }}
@@ -2653,9 +2674,9 @@ export default function Page11() {
                 </div>
               )}
 
-              {gameState === 'ROUND_OVER' && (
+              {isSoloRoundOver && (
                 <div className="waiting-dock-msg">
-                  🎉 라운드가 종료되었습니다! 상단의 <strong>[다음 게임 시작]</strong>을 눌러 계속하세요!
+                  🎉 라운드 종료! 모든 카드가 공개되었습니다. <strong>[다음 게임 시작]</strong>을 눌러 계속하세요!
                 </div>
               )}
             </div>
