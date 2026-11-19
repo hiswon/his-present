@@ -1,4 +1,4 @@
-.orbito-container {
+.pk-container {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -9,18 +9,19 @@
   box-sizing: border-box;
   overflow-y: auto;
   overflow-x: hidden;
-  transition: background 0.5s ease-in-out;
+  transition: background 0.6s ease-in-out;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.setup-card {
+.setup-card,
+.order-panel {
   max-width: 540px;
   margin: 18px auto;
   background: #ffffff;
   border-radius: 22px;
   padding: 24px 20px;
-  box-shadow: 0 10px 28px -5px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 10px 28px -5px rgba(0, 0, 0, 0.1);
 }
 
 .setup-title {
@@ -49,7 +50,7 @@
 
 .piece-count-selector {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
 
@@ -59,15 +60,21 @@
   border: 2px solid #e2e8f0;
   background: #ffffff;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 14px;
   color: #475569;
   cursor: pointer;
 }
 
 .count-btn.active {
-  border-color: #4f46e5;
-  background: #eef2ff;
-  color: #3730a3;
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .player-input {
@@ -77,73 +84,52 @@
   border-radius: 12px;
   font-size: 15px;
   outline: none;
-  background: #ffffff;
 }
 
-.player-input:focus {
-  border-color: #4f46e5;
-}
-
-.player-list {
+.player-list,
+.order-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+  margin-bottom: 8px;
 }
 
-.player-item {
+.player-item,
+.order-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: #ffffff;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid #e2e8f0;
   font-weight: 700;
-  gap: 10px;
 }
 
-.rule-summary-box {
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-size: 13px;
-  color: #312e81;
-  margin-bottom: 14px;
-}
-
-.rule-summary-box ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-  line-height: 1.5;
-}
-
-/* 흑 / 백 구슬 배지 아이콘 */
-.marble-badge-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+.squircle-dot {
+  min-width: 28px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: #ffffff;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
   flex-shrink: 0;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
 }
 
-.marble-badge-icon.black {
-  background: radial-gradient(circle at 30% 28%, #64748b 0%, #1e293b 48%, #020617 100%);
-  border: 1.5px solid #475569;
-}
-
-.marble-badge-icon.white {
-  background: radial-gradient(circle at 30% 28%, #ffffff 0%, #f1f5f9 60%, #cbd5e1 100%);
-  border: 1.5px solid #94a3b8;
-}
-
-.marble-badge-icon.mini {
-  width: 18px;
-  height: 18px;
+.squircle-dot.mini {
+  min-width: 24px;
+  height: 19px;
+  border-radius: 5px;
+  font-size: 11px;
 }
 
 .btn {
@@ -164,7 +150,7 @@
 }
 
 .btn-primary {
-  background: #4f46e5;
+  background: #3b82f6;
   color: white;
 }
 
@@ -181,8 +167,37 @@
   padding: 12px;
 }
 
+.btn-delete {
+  background: transparent;
+  color: #ef4444;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.order-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.order-btn {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 /* 토스트 알림 */
-.orbito-toast {
+.pk-toast {
   position: fixed;
   top: 52px;
   left: 50%;
@@ -193,20 +208,25 @@
   font-size: 13px;
   z-index: 200;
   color: #ffffff;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
   animation: toast-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   pointer-events: none;
   white-space: nowrap;
 }
 
-.orbito-toast.info {
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.3);
+.pk-toast.info {
+  background: rgba(15, 23, 42, 0.9);
 }
 
-.orbito-toast.celebrate {
-  background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
-  border: 2px solid #c7d2fe;
+.pk-toast.success,
+.pk-toast.celebrate {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: 2px solid #6ee7b7;
+}
+
+.pk-toast.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: 2px solid #fca5a5;
 }
 
 @keyframes toast-pop {
@@ -220,15 +240,15 @@
   }
 }
 
-/* 플레이 레이아웃 */
+/* 컴팩트 레이아웃 */
 .play-wrapper.compact-tablet-mode {
-  max-width: 640px;
+  max-width: 780px;
   height: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
 }
 
 .game-header.compact-header {
@@ -241,376 +261,424 @@
 
 .player-status-bar {
   display: flex;
-  gap: 8px;
+  gap: 5px;
   flex-wrap: nowrap;
   overflow-x: auto;
 }
 
 .player-badge-card {
-  background: rgba(255, 255, 255, 0.88);
-  padding: 5px 10px;
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 4px 8px;
+  border-radius: 9px;
   border: 2px solid transparent;
   white-space: nowrap;
-  transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .player-badge-card.active {
   background: #ffffff;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
-  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.14);
+}
+
+.player-badge-card.eliminated {
+  opacity: 0.5;
+  text-decoration: line-through;
 }
 
 .player-badge-top {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.win-count-pill {
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 1px 5px;
+  border-radius: 5px;
 }
 
 .badge-score {
-  background: #eef2ff;
-  color: #3730a3;
+  background: #f1f5f9;
+  color: #0f172a;
   font-size: 11px;
   font-weight: 800;
-  padding: 2px 6px;
-  border-radius: 6px;
+  padding: 1px 5px;
+  border-radius: 5px;
 }
 
 .btn-compact-setup {
-  padding: 6px 10px;
+  padding: 5px 9px;
   font-size: 14px;
   border-radius: 9px;
   flex-shrink: 0;
 }
 
 /* =========================================================
-   4×4 오비토(ORBITO) 궤도 회전 보드 프레임
+   7포커 그린 펠트 테이블 보드
    ========================================================= */
-.orbito-board-outer {
-  width: min(100%, calc(100dvh - 155px));
-  margin: 0 auto;
-  background: linear-gradient(145deg, #0f172a 0%, #1e1b4b 100%);
-  border: 3px solid #6366f1;
-  border-radius: 24px;
-  padding: 10px;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5), inset 0 0 18px rgba(99, 102, 241, 0.35);
+.pk-table-board {
+  flex: 1;
+  background: radial-gradient(circle at center, #15803d 0%, #14532d 100%);
+  border: 4px solid #78350f;
+  border-radius: 22px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 8px;
-  flex-shrink: 0;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35), inset 0 0 28px rgba(0, 0, 0, 0.45);
+  overflow-y: auto;
 }
 
-.orbito-board-crest {
-  text-align: center;
-  font-size: 11.5px;
+.pk-notice-banner {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fde047;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.4px;
-  color: #c7d2fe;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
-  line-height: 1.25;
+  text-align: center;
+  padding: 6px 12px;
+  border-radius: 10px;
 }
 
-.orbito-board-shell {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  background: radial-gradient(circle at center, #334155 0%, #1e293b 70%, #0f172a 100%);
-  border-radius: 20px;
-  padding: 10px;
-  box-sizing: border-box;
-  border: 2px solid #475569;
-  box-shadow: inset 0 4px 14px rgba(0, 0, 0, 0.6);
-  transition: transform 0.35s ease;
-}
-
-.orbito-board-shell.orbit-pulse {
-  box-shadow: inset 0 0 24px rgba(129, 140, 248, 0.7), 0 0 20px rgba(99, 102, 241, 0.6);
-}
-
-.orbito-grid-4x4 {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: repeat(4, 1fr);
-  gap: 8px;
-  width: 100%;
-  height: 100%;
-}
-
-.orbito-cell {
-  position: relative;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
-}
-
-/* 바깥 12칸 궤도 스타일 */
-.orbito-cell.outer-track {
-  background: linear-gradient(145deg, #1e293b, #0f172a);
-  border: 1.5px solid #334155;
-  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.65);
-}
-
-/* 안쪽 4칸 궤도 스타일 */
-.orbito-cell.inner-track {
-  background: linear-gradient(145deg, #312e81, #1e1b4b);
-  border: 1.5px solid #4f46e5;
-  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.65);
-}
-
-.orbito-socket-ring {
-  position: absolute;
-  width: 72%;
-  height: 72%;
-  border-radius: 50%;
-  border: 1px dashed rgba(148, 163, 184, 0.28);
-  pointer-events: none;
-}
-
-.orbito-cell.clickable {
-  cursor: pointer;
-}
-
-.orbito-cell.clickable:hover {
-  border-color: #818cf8;
-  box-shadow: inset 0 0 12px rgba(129, 140, 248, 0.45);
-}
-
-/* 밀기 목적지 강조 */
-.orbito-cell.push-target {
-  background: rgba(16, 185, 129, 0.25);
-  border: 2px solid #34d399;
-  animation: target-pulse 0.85s infinite alternate;
-}
-
-@keyframes target-pulse {
-  from {
-    transform: scale(0.97);
-  }
-  to {
-    transform: scale(1.02);
-  }
-}
-
-.push-target-dot {
-  color: #6ee7b7;
-  font-size: 20px;
-  font-weight: 900;
-  pointer-events: none;
-}
-
-/* 빈 칸 호버 시 착수 미리보기 */
-.orbito-cell.clickable:hover .orbito-hover-ghost {
-  opacity: 0.48;
-  transform: scale(0.9);
-}
-
-.orbito-hover-ghost {
-  width: 74%;
-  height: 74%;
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity 0.14s ease, transform 0.14s ease;
-  pointer-events: none;
-}
-
-.orbito-hover-ghost.black {
-  background: #020617;
-  border: 2px solid #64748b;
-}
-
-.orbito-hover-ghost.white {
-  background: #f8fafc;
-}
-
-/* 입체 오비토 구슬 */
-.orbito-marble {
-  position: relative;
-  width: 76%;
-  height: 76%;
-  border-radius: 50%;
-  z-index: 4;
-  transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease;
-  animation: marble-drop 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes marble-drop {
-  from {
-    transform: scale(1.22);
-    opacity: 0.7;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.orbito-marble.black {
-  background: radial-gradient(circle at 30% 26%, #64748b 0%, #1e293b 42%, #020617 100%);
-  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.75), inset 0 -3px 6px rgba(255, 255, 255, 0.14);
-  border: 1.5px solid #475569;
-}
-
-.orbito-marble.white {
-  background: radial-gradient(circle at 30% 26%, #ffffff 0%, #f1f5f9 55%, #94a3b8 100%);
-  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.6), inset 0 -3px 6px rgba(15, 23, 42, 0.22);
-  border: 1.5px solid #cbd5e1;
-}
-
-/* 밀기 가능한 상대 구슬 힌트 */
-.orbito-marble.pushable-hint:hover {
-  transform: scale(1.06);
-  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.75);
-}
-
-/* 밀기 위해 선택된 구슬 */
-.orbito-marble.selected-push {
-  box-shadow: 0 0 0 3.5px #10b981, 0 0 16px #34d399;
-  transform: scale(1.08);
-}
-
-/* 방금 놓은 구슬 표시 */
-.orbito-marble.last-placed::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 26%;
-  height: 26%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: #6366f1;
-  box-shadow: 0 0 6px #818cf8;
-}
-
-/* 4목 승리 구슬 강조 */
-.orbito-marble.winning-marble {
-  box-shadow: 0 0 0 3.5px #facc15, 0 0 18px #fde047;
-  animation: win-pulse 0.7s infinite alternate;
-}
-
-@keyframes win-pulse {
-  from {
-    transform: scale(0.95);
-  }
-  to {
-    transform: scale(1.08);
-  }
-}
-
-/* 중앙 오비토 회전 버튼 */
-.orbito-center-btn {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 22%;
-  height: 22%;
-  min-width: 58px;
-  min-height: 58px;
-  border-radius: 50%;
-  z-index: 15;
-  border: 3px solid #64748b;
-  background: radial-gradient(circle at 35% 30%, #334155, #0f172a);
-  color: #94a3b8;
+/* [요구사항 3] 최종 승리 시 카드 결과를 가리지 않고 상단에 띄우는 축하 배너 */
+.winner-celebration-top-bar {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 3px solid #f59e0b;
+  border-radius: 14px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  animation: toast-pop 0.35s ease-out;
+}
+
+.winner-celebrate-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: #92400e;
+  text-align: center;
+}
+
+.winner-celebrate-stats {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  cursor: not-allowed;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.75);
-  transition: all 0.25s ease;
-  padding: 0;
+  gap: 8px;
 }
 
-.orbito-center-btn.ready {
-  cursor: pointer;
-  border-color: #facc15;
-  background: radial-gradient(circle at 35% 30%, #6366f1, #312e81);
-  color: #ffffff;
-  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.35), 0 0 24px rgba(99, 102, 241, 0.9);
-  animation: orbit-btn-pulse 1.1s infinite alternate;
+.stat-chip {
+  background: #ffffff;
+  border: 1px solid #fcd34d;
+  color: #78350f;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 999px;
 }
 
-.orbito-center-btn.ready:hover {
-  transform: translate(-50%, -50%) scale(1.08);
-}
-
-.orbito-center-btn.spinning .orbito-btn-arrow {
-  animation: arrow-spin 0.45s ease-in-out;
-}
-
-@keyframes orbit-btn-pulse {
-  from {
-    transform: translate(-50%, -50%) scale(0.98);
-  }
-  to {
-    transform: translate(-50%, -50%) scale(1.06);
-  }
-}
-
-@keyframes arrow-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(-360deg);
-  }
-}
-
-.orbito-btn-arrow {
-  font-size: 20px;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.orbito-btn-label {
-  font-size: 9.5px;
-  font-weight: 900;
-  letter-spacing: 0.6px;
+.winner-celebrate-actions {
+  display: flex;
+  gap: 8px;
   margin-top: 2px;
 }
 
-/* 하단 컨트롤 바 */
-.orbito-bottom-dock {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 14px;
-  padding: 8px 12px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-  display: flex;
-  justify-content: space-between;
+.center-pot-box {
+  align-self: center;
+  background: rgba(15, 23, 42, 0.65);
+  border: 2px solid #fbbf24;
+  border-radius: 999px;
+  padding: 5px 18px;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  gap: 10px;
+  color: #ffffff;
 }
 
-.turn-status-group {
+.pot-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.pot-amount {
+  font-size: 16px;
+  font-weight: 900;
+  color: #facc15;
+}
+
+.highest-bet-tag {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.opponents-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  justify-content: center;
+}
+
+.opponent-hand-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.opponent-hand-card.eliminated {
+  opacity: 0.48;
+}
+
+.opponent-hand-card.winner-highlight-card {
+  border: 2.5px solid #facc15;
+  background: rgba(250, 204, 21, 0.14);
+}
+
+.opp-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: 6px;
+  color: #f8fafc;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.opp-stat-mini {
+  font-size: 11px;
+  color: #fde68a;
+  font-weight: 700;
+}
+
+.elim-tag {
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
   font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.result-hand-badge {
+  background: #fef08a;
+  color: #713f12;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-left: auto;
+}
+
+.cards-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+/* =========================================================
+   트럼프 카드 디자인
+   ========================================================= */
+.pk-card {
+  position: relative;
+  width: 48px;
+  height: 68px;
+  border-radius: 8px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Georgia', serif;
+  font-weight: 900;
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.pk-card.mini {
+  width: 40px;
+  height: 56px;
+}
+
+.pk-card.red {
+  color: #dc2626;
+}
+
+.pk-card.black {
   color: #0f172a;
 }
 
-.move-count-pill {
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 12px;
-  font-weight: 800;
-  padding: 4px 9px;
-  border-radius: 8px;
+.pk-card.face-down {
+  background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
+  border-color: #93c5fd;
+  color: #ffffff;
+}
+
+.pk-card-rank {
+  font-size: 17px;
+  line-height: 1.1;
+}
+
+.pk-card-suit {
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.pk-card.mini .pk-card-rank {
+  font-size: 14px;
+}
+
+.pk-card.mini .pk-card-suit {
+  font-size: 15px;
+}
+
+.pk-card-back-pattern {
+  font-size: 24px;
+  opacity: 0.85;
+}
+
+.pk-hidden-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 9px;
+}
+
+.pk-card.selectable {
+  cursor: pointer;
+  border-color: #3b82f6;
+}
+
+.pk-card.selectable:hover {
+  transform: translateY(-4px);
+}
+
+.pk-card.selected {
+  border-color: #ef4444;
+  background: #fee2e2;
+  transform: translateY(-4px);
+}
+
+.pk-select-tag {
+  position: absolute;
+  bottom: -7px;
+  background: #ef4444;
+  color: #ffffff;
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 900;
+  padding: 1px 4px;
+  border-radius: 4px;
   white-space: nowrap;
 }
 
-/* 모달 및 축하 애니메이션 */
+/* 하단 내 손패 및 베팅 도크 */
+.pk-bottom-dock {
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 16px;
+  padding: 9px 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.dock-top-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.turn-owner-pill {
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 3px 9px;
+  border-radius: 7px;
+}
+
+.step-status-badge {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 7px;
+}
+
+.my-hand-area {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 7px 8px;
+}
+
+.cards-row.my-cards {
+  justify-content: center;
+}
+
+.betting-controls-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.bet-btn {
+  padding: 9px 6px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+
+.bet-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bet-btn.fold {
+  background: #64748b;
+}
+
+.bet-btn.check {
+  background: #0284c7;
+}
+
+.bet-btn.call {
+  background: #059669;
+}
+
+.bet-btn.raise {
+  background: #d97706;
+}
+
+.bet-btn.raise-big {
+  background: #dc2626;
+}
+
+/* 모달 / 홈 / 넷로비 스타일 */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.78);
+  background: rgba(15, 23, 42, 0.72);
   backdrop-filter: blur(5px);
   display: flex;
   align-items: center;
@@ -621,90 +689,23 @@
 
 .modal-content {
   position: relative;
-  background: linear-gradient(180deg, #ffffff 0%, #eef2ff 100%);
-  border: 3px solid #6366f1;
-  padding: 26px 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #fffbeb 100%);
+  border: 3px solid #f59e0b;
+  padding: 24px 20px;
   border-radius: 24px;
   max-width: 440px;
   width: 100%;
   text-align: center;
-  box-shadow: 0 0 40px rgba(99, 102, 241, 0.55);
+  box-shadow: 0 0 40px rgba(245, 158, 11, 0.55);
   z-index: 260;
-}
-
-.modal-trophy {
-  font-size: 46px;
-  margin-bottom: 4px;
-}
-
-.congrats-banner {
-  font-size: 19px;
-  font-weight: 900;
-  background: linear-gradient(90deg, #4f46e5, #10b981, #3b82f6, #ec4899);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 .modal-subtext {
   color: #64748b;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   font-size: 14px;
 }
 
-.rank-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-
-.rank-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
-  font-weight: 700;
-}
-
-.rank-item.winner {
-  background: linear-gradient(90deg, #e0e7ff, #c7d2fe);
-  border: 2px solid #4f46e5;
-}
-
-.confetti-layer {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 255;
-  overflow: hidden;
-}
-
-.confetti-piece {
-  position: absolute;
-  top: -20px;
-  width: 10px;
-  height: 16px;
-  border-radius: 3px;
-  animation: confetti-fall linear infinite;
-}
-
-@keyframes confetti-fall {
-  0% {
-    transform: translateY(-20px) rotate(0deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(105vh) rotate(720deg);
-    opacity: 0.2;
-  }
-}
-
-/* =========================================================
-   홈 & 넷게임 로비 스타일
-   ========================================================= */
 .home-entry-card {
   text-align: center;
   margin-top: 8vh;
@@ -712,7 +713,7 @@
 }
 
 .home-castle-icon {
-  font-size: 54px;
+  font-size: 46px;
   margin-bottom: 6px;
 }
 
@@ -739,17 +740,17 @@
   border: 2.5px solid #e2e8f0;
   background: #ffffff;
   cursor: pointer;
-  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .mode-select-btn:hover {
   transform: translateY(-3px);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
 }
 
 .mode-select-btn.solo {
-  border-color: #a5b4fc;
-  background: linear-gradient(180deg, #ffffff 0%, #eef2ff 100%);
+  border-color: #93c5fd;
+  background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
 }
 
 .mode-select-btn.net {
@@ -781,11 +782,11 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.9);
   padding: 12px 16px;
   border-radius: 16px;
   margin-bottom: 14px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
 .net-rooms-grid {
@@ -799,7 +800,7 @@
   border-radius: 18px;
   padding: 16px;
   border: 2.5px solid #e2e8f0;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
   display: flex;
@@ -809,7 +810,7 @@
 
 .net-room-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.1);
 }
 
 .net-room-card.empty {
@@ -860,7 +861,7 @@
 
 .room-rules-info {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   font-size: 12px;
   font-weight: 700;
   color: #475569;
@@ -901,6 +902,13 @@
   border: 1.5px solid #cbd5e1;
 }
 
+.member-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 .empty-member-text {
   font-size: 12px;
   color: #94a3b8;
@@ -919,7 +927,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: 800;
-  color: #4338ca;
+  color: #2563eb;
   padding-top: 4px;
   border-top: 1px dashed #e2e8f0;
 }
@@ -933,7 +941,7 @@
 
 .net-level-badge {
   background: #0f172a;
-  color: #a5b4fc;
+  color: #fbbf24;
   font-size: 11px;
   font-weight: 900;
   padding: 4px 7px;
@@ -967,7 +975,7 @@
 }
 
 .net-waitlist-strip {
-  background: rgba(67, 56, 202, 0.92);
+  background: rgba(30, 64, 175, 0.9);
   color: #ffffff;
   text-align: center;
   font-size: 11.5px;
